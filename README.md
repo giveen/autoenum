@@ -16,6 +16,7 @@ Autoenum first runs 2 nmap scans in tandem, one scan looks specifically for serv
 ```
 git clone https://github.com/Gr1mmie/autoenum.git
 chmod +x autoenum/autoenum.sh
+bash autoenum.sh
 ```
 
 ## What's new
