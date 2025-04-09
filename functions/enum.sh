@@ -63,14 +63,65 @@ imap_enum (){
         echo "[+] Work in progress"
 }
 
-ldap_enum (){
-        mkdir $loot/ldap
-	tput setaf 2;echo "[+] Starting ldap enum";tput sgr0
-        nmap -vv -Pn -sV -p 389 --script='(ldap* or ssl*) and not (brute or broadcast or dos or external or fuzzer)' $IP | tee -a $loot/ldap/ldap_scripts
-        #ldapsearch -x -h $rhost -s base namingcontexts | tee -a $loot/ldap/ldapsearch &
-        echo "nmap -vv -Pn -sV -p 389 --script='(ldap* or ssl*) and not (brute or broadcast or dos or external or fuzzer)' $IP" >> $loot/ldap/cmds_run &
-        wait
-        rm $loot/raw/ldap_found
+ldap_enum() {
+    # Create directory structure
+    mkdir -p "$loot/ldap"
+    echo -e "${GREEN}[+] Starting LDAP enumeration${NC}"
+    
+    # Run Nmap LDAP scripts (basic discovery)
+    (
+        echo -e "${YELLOW}[+] Running Nmap LDAP scripts${NC}"
+        nmap -vv -Pn -sV -p 389,636 --script='(ldap* or ssl*) and not (brute or broadcast or dos or external or fuzzer)' "$IP" \
+        | tee "$loot/ldap/nmap_ldap_scripts.txt"
+        echo "nmap -vv -Pn -sV -p 389,636 --script='(ldap* or ssl*) and not (brute or broadcast or dos or external or fuzzer)' $IP" \
+        >> "$loot/ldap/cmds_run"
+    ) &
+    
+    # Run ldapsearch (base DN discovery)
+    (
+        echo -e "${YELLOW}[+] Running ldapsearch for base DN${NC}"
+        ldapsearch -x -H "ldap://$IP:389" -s base namingcontexts 2>/dev/null \
+        | tee "$loot/ldap/ldapsearch_base.txt"
+        echo "ldapsearch -x -H ldap://$IP:389 -s base namingcontexts" >> "$loot/ldap/cmds_run"
+    ) &
+    
+    # Run ldapwhoami (anonymous binding check)
+    (
+        echo -e "${YELLOW}[+] Checking anonymous binding${NC}"
+        ldapwhoami -x -H "ldap://$IP:389" 2>/dev/null \
+        | tee "$loot/ldap/anonymous_bind.txt"
+        echo "ldapwhoami -x -H ldap://$IP:389" >> "$loot/ldap/cmds_run"
+    ) &
+    
+    wait
+    
+    # Check if we found any naming contexts
+    if grep -q "namingcontexts" "$loot/ldap/ldapsearch_base.txt"; then
+        base_dn=$(grep "namingcontexts" "$loot/ldap/ldapsearch_base.txt" | head -1 | cut -d' ' -f2)
+        echo -e "${GREEN}[+] Found base DN: $base_dn${NC}"
+        
+        # Run more detailed enumeration if base DN found
+        (
+            echo -e "${YELLOW}[+] Enumerating LDAP objects${NC}"
+            ldapsearch -x -H "ldap://$IP:389" -b "$base_dn" '(objectClass=*)' 2>/dev/null \
+            | tee "$loot/ldap/ldapsearch_full.txt"
+            echo "ldapsearch -x -H ldap://$IP:389 -b '$base_dn' '(objectClass=*)'" >> "$loot/ldap/cmds_run"
+        ) &
+        
+        # Check for password policy
+        (
+            echo -e "${YELLOW}[+] Checking password policy${NC}"
+            ldapsearch -x -H "ldap://$IP:389" -b "$base_dn" '(objectClass=pwdPolicy)' 2>/dev/null \
+            | tee "$loot/ldap/password_policy.txt"
+        ) &
+    fi
+    
+    wait
+    
+    # Cleanup only if file exists
+    [[ -f "$loot/raw/ldap_found" ]] && rm "$loot/raw/ldap_found"
+    
+    echo -e "${GREEN}[+] LDAP enumeration complete${NC}"
 }
 
 dns_enum (){
@@ -80,7 +131,7 @@ dns_enum (){
         #host -t mx $IP >> $loot/dns/host_out
         #host -t txt $IP >> $loot/dns/host_out
         #host -t ns $IP >> $loot/dns/host_out
-        #host -t ptr $IP >> $loot/dns/host_out
+        ##host -t ptr $IP >> $loot/dns/host_out
         #host -t cname $IP >> $loot/dns/host_out
         #host -t a $IP >> $loot/dns/host_out
         #for host in <list of subs>;do host -l <host> <dns server addr>;done
@@ -134,106 +185,220 @@ oracle_enum (){
         rm $loot/raw/oracle_found
 }
 
-http_enum (){
-        mkdir -p $IP/autoenum/loot/http
-        echo "[+] http enum starting..."
-	pct=$(cat $loot/raw/http_found | wc -l)
-	if [[ $pct -gt 1 ]];then
-		echo "[+] Multiple HTTP ports detected"
-                for port in $(cat $loot/raw/http_found);do
-			mkdir $loot/http/$port
-                        echo "[+] Firing up nikto on port $port"
-                        nikto -ask=no -h $IP:$port -T 123b | tee -a  $loot/http/$port/nitko
-	                echo "[+] checking ssl for possible holes on port $port"
-			sslscan --show-certificate $IP:$port | tee -a $loot/http/$port/sslinfo &
-			echo "[+] Curling interesting files on port $port"
-			curl -sSiK $IP:$port/index.html | tee -a $loot/http/$port/landingpage &
-			curl -sSik $IP:$port/robots.txt | tee -a $loot/http/$port/robots.txt &
-			echo -e "\n[+] Pulling headers/plugin info with whatweb on port $port"
-			whatweb -a3 $IP:$port 2>/dev/null | tee -a $loot/http/$port/whatweb &
-			wait
-                        echo "[+] bruteforcing dirs on $IP:$port"
-                        gobuster dir -re -t 65 -u http://$IP:$port -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -o $loot/http/$port/dirs_found -k
-#			if IIS detected
-#			echo "[*] IIS detected"
-#                        echo "[+] enumerating dav..."
-#                        mkdir -p $loot/dav
-#                        davtest -url http://$IP:$port | tee -a $loot/dav/dav_enum_$port
-#			if wordpress detected
-#			echo -e "[*] WordPress detected\nRunning wpscan"
-#			run wpscan | tee -a $loot/http/wpscan_$port
-                done
-        elif [[ $pct == 1 ]];then
-		port=$(cat $loot/raw/http_found)
-                echo "[+] firing up nikto"
-                nikto -ask=no -h $IP:$port >> $loot/http/nikto_out &
-		#echo "[+] Running unican in background"
-                #uniscan -u http://$IP -bqweds >> $loot/http/uniscan
-                echo "[+] checking ssl for possible holes"
-                sslscan --show-certificate $IP:$port | tee -a $loot/http/sslinfo
-		echo "[+] Pulling headers/plugin info with whatweb"
-		whatweb -a3 $IP:$port 2>/dev/null | tee -a $loot/http/whatweb
-                echo "[+] Curling interesting files"
-                curl -sSiK $IP:$port/index.html | tee -a $loot/http/landingpage &
-                curl -sSik $IP:$port/robots.txt | tee -a $loot/http/robots.txt &
-		wait
-                echo "[+] bruteforcing dirs on $IP"
-                gobuster dir -re -t 65 -u $IP:$port -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -o $loot/http/dirs_found -k
-#		if IIS detected
-#                echo "[+] enumerating dav..."
-#                davtest -url http://$IP | tee -a $loot/http/dav_enum
-#                       if wordpress detected
-#                       echo -e "[*] WordPress detected\nRunning wpscan"
-#                       run wpscan | tee -a $loot/http/wpscan_$port
-
+http_enum() {
+    # Create directory structure
+    mkdir -p "$loot/http"
+    echo -e "${YELLOW}[+] HTTP enumeration starting...${NC}"
+    
+    # Read ports from file
+    if [[ ! -s "$loot/raw/http_found" ]]; then
+        echo -e "${RED}[-] No HTTP ports found to enumerate${NC}"
+        return
+    fi
+    
+    mapfile -t ports < "$loot/raw/http_found"
+    pct=${#ports[@]}
+    
+    # Enhanced HTTP service verification
+    verify_http_service() {
+        local port=$1
+        local timeout=3
+        
+        # Fast curl check
+        if curl -sI -m "$timeout" "http://$IP:$port" &>/dev/null; then
+            return 0
         fi
-                touch $loot/http/cmds_run
-                echo "uniscan -u http://$IP -qweds" >> $loot/http/cmds_run &
-                echo "sslscan --show-certificate $IP:80 " >> $loot/http/cmds_run &
-                echo "nikto -h $IP" >> $loot/http/cmds_run &
-                echo "gobuster dir -re -t 45 -u $IP -w /usr/share/wordlists/dirb/common.txt" >> $loot/http/cmds_run &
-                echo "curl -sSiK $IP" >> $loot/http/cmds_run &
-                echo "curl -sSiK $IP/robots.txt" >> $loot/http/cmds_run &
-                echo "whatweb -v -a 3 $IP" >> $loot/http/cmds_run &
-#                echo "wafw00f http://$IP" >> $loot/http/cmds_run &
-                wait
-                echo "[+] http enum complete!"
+        
+        # Netcat fallback
+        if echo -e "HEAD / HTTP/1.1\r\nHost: $IP\r\n\r\n" | nc -w "$timeout" "$IP" "$port" | grep -iq "HTTP/"; then
+            return 0
+        fi
+        
+        return 1
+    }
+
+    # Optimized directory brute force
+    run_gobuster() {
+        local port=$1
+        local port_dir=$2
+        
+        if ! curl -sI -m 5 "http://$IP:$port" &>/dev/null; then
+            echo -e "${RED}[-] Port $port unresponsive - skipping gobuster${NC}"
+            return
+        fi
+        
+        echo -e "${YELLOW}[+] Bruteforcing directories (port $port)${NC}"
+        timeout 300 gobuster dir \
+            -t 40 \
+            -u "http://$IP:$port" \
+            -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt \
+            -o "$port_dir/dirs_found" \
+            -k \
+            --timeout 8s \
+            --delay 200ms \
+            --status-codes 200,204,301,302,307,401,403,500 \
+            --status-codes-blacklist "" \
+            --no-error \
+            --quiet
+        
+        if [[ $? -eq 124 ]]; then
+            echo -e "${RED}[-] Gobuster timed out on port $port${NC}"
+        elif [[ ! -s "$port_dir/dirs_found" ]]; then
+            echo -e "${YELLOW}[-] No directories found on port $port${NC}"
+        fi
+    }
+
+    # Parallel processing function
+    process_port() {
+        local port=$1
+        local port_dir="$loot/http/$port"
+        
+        mkdir -p "$port_dir"
+        
+        echo -e "${YELLOW}[+] Processing port $port${NC}"
+        
+        if ! verify_http_service "$port"; then
+            echo -e "${RED}[-] No HTTP service on port $port - skipping${NC}"
+            return
+        fi
+        
+        # Run all scans in parallel
+        (
+            echo -e "${YELLOW}[+] Nikto scan${NC}"
+            timeout 120 nikto -ask=no -h "$IP:$port" -T 123b >> "$port_dir/nikto" 2>&1
+        ) &
+        
+        (
+            echo -e "${YELLOW}[+] SSL scan${NC}"
+            timeout 60 sslscan --show-certificate "$IP:$port" >> "$port_dir/sslinfo" 2>&1
+        ) &
+        
+        (
+            echo -e "${YELLOW}[+] Fetching pages${NC}"
+            curl -sSiLk -m 15 "$IP:$port/index.html" >> "$port_dir/landingpage" 2>&1
+            curl -sSiLk -m 10 "$IP:$port/robots.txt" >> "$port_dir/robots.txt" 2>&1
+        ) &
+        
+        (
+            echo -e "${YELLOW}[+] WhatWeb scan${NC}"
+            timeout 90 whatweb -a3 "$IP:$port" >> "$port_dir/whatweb" 2>&1
+        ) &
+        
+        wait
+        
+        # Run gobuster with fixed status code handling
+        run_gobuster "$port" "$port_dir"
+        
+        # Log commands
+        {
+            echo "verify_http_service $port"
+            echo "nikto -ask=no -h $IP:$port -T 123b"
+            echo "sslscan --show-certificate $IP:$port"
+            echo "curl -sSiLk $IP:$port/{index.html,robots.txt}"
+            echo "whatweb -a3 $IP:$port"
+            echo "gobuster dir -u http://$IP:$port -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -o $port_dir/dirs_found -k --timeout 8s --delay 200ms --status-codes 200,204,301,302,307,401,403,500 --status-codes-blacklist \"\""
+        } >> "$port_dir/cmds_run"
+    }
+
+    # Main execution
+    if (( pct > 1 )); then
+        echo -e "${YELLOW}[+] Scanning $pct HTTP ports in parallel${NC}"
+        for port in "${ports[@]}"; do
+            process_port "$port" &
+        done
+        wait
+    else
+        process_port "${ports[0]}"
+    fi
+
+    echo -e "${GREEN}[+] HTTP enumeration complete!${NC}"
 }
 
-smb_enum (){
-        echo "[+] Starting SMB enum..."
-        mkdir -p $loot/smb
-        mkdir -p $loot/smb/shares
-        # checks for eternal blue and other common smb vulns
-        nmap --script smb-vuln-ms17-010.nse --script-args=unsafe=1 -p 139,445 $IP | tee -a $loot/smb/eternalblue
-        if ! grep -q "smb-vuln-ms17-010:" "auotenum/loot/smb/eternalblue"; then rm $loot/smb/eternalblue;fi
-        nmap --script smb-vuln-ms08-067.nse --script-args=unsafe=1 -p 445 $IP | tee -a $loot/smb/08-067
-        if ! grep -q "smb-vuln-ms08-067:" "autoenum/loot/smb/08-067";then rm $loot/smb/08-067;fi
-        nmap --script smb-vuln* -p 139,445 $IP | tee -a $loot/smb/gen_vulns
-        #shares n' stuff
-        nmap --script smb-enum-shares -p 139,445 $IP | tee -a $loot/smb/shares/nmap_shares
-        smbmap -H $IP -R | tee -a $loot/smb/shares/smbmap_out
-        smbclient -N -L \\\\$IP | tee -a $loot/smb/shares/smbclient_out
-        if grep -q "Not enough '\' characters in service" "$loot/smb/shares/smbclient_out";then smbclient -N -H \\\\\\$IP | tee -a $loot/smb/shares/smbclient_out;fi
-        if grep -q "Not enough '\' characters in service" "$loot/smb/shares/smbclient_out";then smbclient -N -H \\$IP | tee -a $loot/smb/shares/smbclient_out;fi
-        if grep -q "Not enough '\' characters in service" "$loot/smb/shares/smbclient_out";then rm $loot/smb/shares/smbclient_out; echo "smbclient could not be auotmatically run, rerun smbclient -N -H [IP] manauly" >> $loot/smb/notes;fi
-        if grep -q "Error NT_STATUS_UNSUCCESSFUL" "$loot/smb/shares/smbclient_out";then rm $loot/smb/shares/smbclient;fi
-        if [[ -s "$loot/smb/shares/smbclient_out" ]];then echo "smb shares open to null login, use rpcclient -U '' -N [ip] to run rpc commands, use smbmap -u null -p '' -H $IP -R to verify this" >> $loot/smb/notes;fi
-        find ~ -path '*/$IP/autoenum/loot/smb/*' -type f > $loot/smb/files
-        for file in $(cat $loot/smb/files);do
-                if grep -q "QUITTING!" "$file" || grep -q "ERROR: Script execution failed" "$file" || grep "segmentation fault" "$file";then rm $file;fi
+smb_enum() {
+    echo -e "${YELLOW}[+] Starting SMB enumeration...${NC}"
+    mkdir -p "$loot/smb/shares"
+    
+    # Vulnerability checks
+    echo -e "${BLUE}[+] Checking for common SMB vulnerabilities${NC}"
+    (
+        nmap --script smb-vuln-ms17-010 --script-args=unsafe=1 -p 139,445 "$IP" -oN "$loot/smb/eternalblue"
+        grep -q "smb-vuln-ms17-010:" "$loot/smb/eternalblue" || rm "$loot/smb/eternalblue"
+    ) &
+    
+    (
+        nmap --script smb-vuln-ms08-067 --script-args=unsafe=1 -p 445 "$IP" -oN "$loot/smb/08-067"
+        grep -q "smb-vuln-ms08-067:" "$loot/smb/08-067" || rm "$loot/smb/08-067"
+    ) &
+    
+    (
+        nmap --script smb-vuln* -p 139,445 "$IP" -oN "$loot/smb/gen_vulns"
+    ) &
+    
+    # Share enumeration
+    echo -e "${BLUE}[+] Enumerating SMB shares${NC}"
+    (
+        nmap --script smb-enum-shares -p 139,445 "$IP" -oN "$loot/smb/shares/nmap_shares"
+    ) &
+    
+    (
+        smbmap -H "$IP" -R > "$loot/smb/shares/smbmap_out" 2>&1
+    ) &
+    
+    # SMB client checks with multiple connection attempts
+    (
+        attempts=(
+            "smbclient -N -L \\\\\\\\$IP"
+            "smbclient -N -H \\\\\\$IP"
+            "smbclient -N -H \\$IP"
+        )
+        
+        for attempt in "${attempts[@]}"; do
+            $attempt > "$loot/smb/shares/smbclient_out" 2>&1
+            if ! grep -q "Not enough '\' characters in service" "$loot/smb/shares/smbclient_out"; then
+                break
+            fi
         done
-        touch $loot/smb/cmds_run
-        echo "nmap --script smb-vuln-ms17-010.nse --script-args=unsafe=1 -p 139,445 $IP " >> $loot/smb/cmds_run &
-        echo "nmap --script smb-vuln-ms08-067.nse --script-args=unsafe=1 -p 445 $IP" >> $loot/smb/cmds_run &
-        echo "nmap --script smb-vuln* -p 139,445 $IP" >> $loot/smb/cmds_run &
-        echo "nmap --script smb-enum-shares -p 139,445 $IP" >> $loot/smb/cmds_run &
-        echo "smbmap -H $IP -R " >> $loot/smb/cmds_run &
-        echo "smbclient -N -L \\\\$IP " >> $loot/smb/cmds_run &
-        wait
-        rm $loot/smb/files
-        rm $loot/raw/smb_found
-        echo "[+] SMB enum complete!"
+        
+        if grep -q "Not enough '\' characters in service" "$loot/smb/shares/smbclient_out"; then
+            rm "$loot/smb/shares/smbclient_out"
+            echo "smbclient could not be automatically run, rerun smbclient -N -H [IP] manually" >> "$loot/smb/notes"
+        fi
+        
+        if grep -q "Error NT_STATUS_UNSUCCESSFUL" "$loot/smb/shares/smbclient_out"; then
+            rm "$loot/smb/shares/smbclient_out"
+        fi
+        
+        if [[ -s "$loot/smb/shares/smbclient_out" ]]; then
+            echo "smb shares open to null login, use rpcclient -U '' -N $IP to run rpc commands" >> "$loot/smb/notes"
+            echo "use smbmap -u null -p '' -H $IP -R to verify this" >> "$loot/smb/notes"
+        fi
+    ) &
+    
+    wait
+    
+    # Clean up bad output files
+    echo -e "${BLUE}[+] Cleaning up invalid output files${NC}"
+    find "$loot/smb" -type f \( -name "*.nmap" -o -name "*.txt" \) | while read -r file; do
+        if grep -q -E "QUITTING!|ERROR: Script execution failed|segmentation fault" "$file"; then
+            rm "$file"
+        fi
+    done
+    
+    # Log commands executed
+    echo -e "${BLUE}[+] Logging executed commands${NC}"
+    cat > "$loot/smb/cmds_run" << EOF
+nmap --script smb-vuln-ms17-010 --script-args=unsafe=1 -p 139,445 $IP
+nmap --script smb-vuln-ms08-067 --script-args=unsafe=1 -p 445 $IP
+nmap --script smb-vuln* -p 139,445 $IP
+nmap --script smb-enum-shares -p 139,445 $IP
+smbmap -H $IP -R
+smbclient -N -L \\\\\\\\$IP
+EOF
+    
+    # Cleanup
+    rm -f "$loot/raw/smb_found"
+    echo -e "${GREEN}[+] SMB enumeration complete!${NC}"
+    echo -e "${CYAN}[+] Results saved to: $loot/smb/${NC}"
 }
 
 linux_enum (){
