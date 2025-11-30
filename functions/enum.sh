@@ -139,8 +139,8 @@ dns_enum (){
         #dnsenum --enum $IP
         #dnsrecon -d $IP
         #gobuster -dns $IP
-
-        echo " "
+         
+        echo "[-] Work in progress - DNS enumeration not yet implemented"
 }
 
 ftp_enum (){
