@@ -1,20 +1,81 @@
 #!/bin/bash
-dir=$(dirname $(readlink -f $0))
+# autoenum.sh
+# Autoenum - Automated Service Enumeration (Kali-Optimized, apt-only)
+# Author: giveen
+# GitHub: https://github.com/giveen/autoenum
 
-source $dir/functions/banner.sh
-source $dir/functions/check_deps.sh
-source $dir/functions/upgrade.sh
-source $dir/functions/scans.sh
-source $dir/functions/enum.sh
-source $dir/functions/help_general.sh
-source $dir/functions/menu.sh
+set -euo pipefail
 
+# === CONFIGURATION ===
+DIR=$(dirname "$(readlink -f "$0")")
+VERSION="1.3.0"
 
-if [[ $1 == '-nr' ]];then nr=1;fi
+# === FUNCTIONS ===
+usage() {
+    cat << EOF
+Autoenum v$VERSION
+Automated service enumeration for CTFs, HTB, VulnHub, OSCP, and real engagements.
+
+Usage: $(basename "$0") [OPTIONS]
+
+Options:
+  -nr, --no-resolve   Skip DNS resolution (use raw IP)
+  -h, --help          Show this help
+  -v, --version       Show version
+
+Example:
+  $(basename "$0") -nr
+EOF
+    exit 0
+}
+
+# === MAIN EXECUTION ===
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -nr|--no-resolve)
+            export NO_RESOLVE=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        -v|--version)
+            echo "Autoenum v$VERSION"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            ;;
+    esac
+done
+
+# === CHECK DEPENDENCIES ===
+if ! bash "$DIR/functions/check_deps.sh" --quiet; then
+    echo -e "\n${RED}❌ Dependency check failed. Exiting.${NO_COLOR}"
+    exit 1
+fi
+
+# === SOURCE LIBRARIES ===
+source "$DIR/functions/banner.sh"
+source "$DIR/functions/upgrade.sh"
+source "$DIR/functions/scans.sh"
+source "$DIR/functions/enum.sh"
+source "$DIR/functions/help_general.sh"
+source "$DIR/functions/menu.sh"
+
+# === START ===
 clear
 banner
-if [ $nr ];then tput setaf 2;echo -en "\n[*] autoenum set to noresolve mode";tput sgr0;sleep 0.5;fi
+if [[ -n "$NO_RESOLVE" ]]; then
+    tput setaf 2
+    echo -en "\n[*] Autoenum set to noresolve mode"
+    tput sgr0
+    sleep 0.5
+fi
+
 get_ip
 halp_meh
 menu
-
