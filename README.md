@@ -86,29 +86,33 @@ chmod +x autoenum.sh
 
 
 ## Dependencies
-Your OS may or may not have some installed by default. Not to worry, autoenum recognizes tools not installed and installs them for you, even updating if they aren't up-to-date!
 
-* nmap
-* nikto
-* gobuster
-* whatweb
-* onesixtyone
-* snmp-check
-* snmpwalk
-* fierce
-* dnsenum
-* dnsrecon
-* sslscan
-* uniscan
-* snmp-user-enum
-* oscanner
-* wafw00f
-* odat
-* searchsploit
-* rpcbind
-* tput
-* jq
-* wpscan
+Your OS may or may not have some tools installed by default. Autoenum automatically detects missing tools and installs them via `apt` — **no `pip`, `go`, or `curl | bash`** required.
+
+| Tool | Purpose |
+|------|--------|
+| `nmap` | Core network scanner for port discovery, service detection, and vulnerability scanning |
+| `nikto` | Web server scanner that checks for outdated software, dangerous files, and common exploits |
+| `gobuster` | Directory and file brute-forcing tool for web enumeration |
+| `whatweb` | Website analyzer that identifies web technologies (CMS, frameworks, servers) |
+| `onesixtyone` | SNMP brute-forcer that tests common community strings (e.g., `public`) |
+| `snmp-check` | SNMP enumeration tool that checks for default credentials and service versions |
+| `snmpwalk` | SNMP tool to retrieve information from SNMP-enabled devices |
+| `fierce` | DNS enumeration tool that performs aggressive DNS queries to discover subdomains |
+| `dnsenum` | DNS enumeration tool for discovering hosts, zones, and subdomains |
+| `dnsrecon` | Comprehensive DNS reconnaissance tool with support for zone transfers, brute-forcing, and more |
+| `sslscan` | SSL/TLS scanner that checks for weak ciphers, expired certificates, and vulnerabilities |
+| `uniscan` | Web application scanner that performs automated vulnerability testing |
+| `snmp-user-enum` | Enumerates valid user accounts via SNMP (e.g., `VRFY` command) |
+| `oscanner` | Oracle scanner that detects Oracle databases and attempts to identify versions and services |
+| `wafw00f` | Web Application Firewall (WAF) detection tool that identifies if a WAF is in place |
+| `odat` | Oracle Database Attack Tool for exploiting Oracle DBs (e.g., brute-force, SQL injection) |
+| `searchsploit` | Local search tool for Exploit-DB (identifies known exploits by service/version) |
+| `rpcbind` | RPC service that maps RPC program numbers to transport addresses |
+| `tput` | Terminal control tool used for color and cursor manipulation (e.g., banners, UI) |
+| `jq` | Command-line JSON processor used for parsing and filtering JSON output (e.g., `searchsploit` JSON) |
+| `wpscan` | WordPress vulnerability scanner that detects themes, plugins, and known exploits |
+
 
 ## Thanks
 Dievus
