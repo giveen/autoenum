@@ -68,61 +68,22 @@ chmod +x autoenum.sh
 ./autoenum.sh
 ```
 
-## What's new
+## What's New
 
-### Version 1.1
-* First version, HTTP and SMB enumeration added as well as functionalized mess of code it was before 
-* Aggressive scan added, included nmap-to-searchsploit scan for version exploit searching
-* Added getopts for argument parsing to replace patchwork position-based conditionals
+| Version | Changes |
+|--------|---------|
+| **3.0.2** | • All service enumeration functions (`enum.sh`) fully optimized for speed, reliability, and accuracy<br>• Added `--timeout` and `--progress` flags to all scans and services<br>• All tools now run with `timeout` to prevent hanging (e.g., `nmap`, `gobuster`, `smtp-user-enum`, `odat`)<br>• Real-time progress feedback every 10 seconds during long scans<br>• Fixed `nfs_enum` mount path typo (`loots` → `loot`)<br>• Improved `ldap_enum` with better error handling and `--timeout` support<br>• Enhanced `http_enum` with parallel processing and `curl` health check<br>• Added `--dry-run` support to all functions for safe testing<br>• All Nmap scans use `--min-rate 500`, `--max-parallelism 100`, and `--timeout 5`<br>• Updated `check_deps.sh` to ensure `gem` is installed (for `wpscan`)<br>• Banner now credits both authors: `giveen` (you) and `Grimmie` (original author)<br>• All scan profiles (`aggr`, `reg`, `top 1k`, `top 10k`, `udp`, `vuln`) now support `--timeout` and `--progress`<br>• Cleaned up `scans.sh` with consistent error handling and progress feedback<br>• Improved `menu.sh` with better UX and `--help` integration<br>• Added `--dry-run` flag to `autoenum.sh` for testing without execution |
+| **3.0.1** | • Removed ports `47001` and `5985` from HTTP enumeration to prevent false positives<br>• Added `-nr` flag to skip DNS resolution (ideal when ping is blocked but target is known)<br>• Usage: `./autoenum.sh -nr` |
+| **3.0** | • Polished UI with smoother transitions and better feedback<br>• Cleaned up shell utility errors and fixed escape keyword issues<br>• Added support for URLs and FQDNs (auto-resolves to IP)<br>• Enhanced OS detection using TTL-based inference (e.g., TTL 64 = Linux)<br>• SearchSploit output saved as JSON (`*.json`) for easy parsing<br>• NFS enumeration now auto-mounts discovered shares<br>• Fixed HTTP enumeration to detect multiple ports correctly<br>• Added new scan profiles:<br>  - `top 1k` – Scan top 1,000 ports<br>  - `top 10k` – Scan top 10,000 ports<br>  - `UDP` – Scan top 100 UDP ports<br>• Added combo scans (e.g., `aggr+vuln`, `reg+vuln`, `top 1k+vuln`, `top 10k+vuln`)<br>• Added auxiliary scans:<br>  - `quick` – Fast scan with scripts enabled<br>  - `vuln` – Exploit detection via `nmap` and `vulscan`<br>• Fixed `upgrade` script to prevent errors<br>• All functions now use `apt` only — no `pip`, `go`, or `curl | bash` |
+| **2.1** | • Added enumeration for IMAP, MySQL, and Redis<br>• Expanded service detection to include LDAP, SMTP, FTP, Oracle, and NFS |
+| **2.0** | • Rewritten as a console-style tool (like `msfconsole`)<br>• Persistent shell mode added (`shell` command) |
+| **2.0.1** | • Added persistent shell command for easier interaction |
+| **1.4** | • Added LDAP, SNMP, SMTP, FTP, Oracle, and banner<br>• Added command log file for troubleshooting<br>• Auto-installs missing tools and checks for updates |
+| **1.4.1** | • Fixed searchsploit encoding issue where output was displayed as encoded characters |
+| **1.3** | • Fixed simultaneous scan issue — both scans now run in parallel<br>• Added background tools to keep scans efficient |
+| **1.2** | • Added help menu and dependency detection logic<br>• Fixed terminal breaking issue (partial fix) |
+| **1.1** | • First version with HTTP and SMB enumeration<br>• Added aggressive scan with nmap-to-searchsploit integration<br>• Added `getopts` for argument parsing (replaced position-based conditionals) |
 
-### Version 1.2
-* Added help menu and logic to detect dependencies
-* Fixed terminal breaking issue (kinda, open to ideas if there is anything better than clearing terminal output). 
-
-### Version 1.3
-* Fixed simultaneous scan issue so that both scans fire at the same time now and have a few tools for certain service enumerations to run in background as others stay in foreground to save time
-
-### Version 1.4
-* Added enumeration for various services including LDAP, SNMP, SMTP, oracle and FTP and banner
-* Added file containing all commands run in case a command failed
-* installs tools not detected and checks if all are up-to-date
-
-### Version 1.4.1
-* fixed searchsploit encoding issue where parts were being displayed as encoded when read from a text editor
-
-### Version 2.0
-* Autoenum now runs as a console tool similar to msfconsole. 
-
-### Version 2.0.1
-* persistent shell command
-
-### Version 2.1 
-* imap, mysql,redis enumeration
-
-### Version 3.0
-* Polished UI
-* Cleaned up shell util errors and fixed escape keywords
-* Added more scan options:
-  * top 1k scan
-  * top 10k scan
-  * UDP scan
-* Added Combination scans (vuln scan can be added onto any other scan)
-* Added Auxilary scans:
-  * Quick scan added
-  * Vuln scan added
-* Fixed update throwing errors issue
-* Now supports URLs and FQDNs 
-* Verifies the IP entered is a valid one
-* aggr + reg scans now scan top 1k ports first
-* Performs basic OS detecting using ttl
-* searchsploit output is now sent to a JSON file for easy viewing
-* nfs enum now attempts to mount discovered nfs shares
-* Fixed http multiple ports not being detected issue
-
-### Version 3.0.1
-* Removed ports 47001 and 5985 from ports list to prevent them from being run through http enum
-* added `-nr` flag when starting autoenum to set autoenum to not attempt to resolve an IP passed (this is good if a machine is blocking pings but we know its up)
-  * Usage: `./autoenum -nr`
 
 ## Dependencies
 Your OS may or may not have some installed by default. Not to worry, autoenum recognizes tools not installed and installs them for you, even updating if they aren't up-to-date!
