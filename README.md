@@ -56,10 +56,16 @@ If a required tool is missing, Autoenum **auto-installs it via `apt`** — no `p
 
 
 ## Installation
-```
-git clone https://github.com/Gr1mmie/autoenum.git
-chmod +x autoenum/autoenum.sh
-bash autoenum.sh
+
+Autoenum is designed for **Kali Linux** (Debian-based) and requires no external dependencies beyond standard tools.
+
+### One-Step Installation
+
+```bash
+git clone https://github.com/giveen/autoenum.git
+cd autoenum
+chmod +x autoenum.sh
+./autoenum.sh
 ```
 
 ## What's new
