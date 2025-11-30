@@ -18,8 +18,42 @@ All scans are optimized with `--min-rate`, `--max-parallelism`, and `--timeout` 
 If you find a bug or have a feature request, please [submit an issue on GitHub](https://github.com/giveen/autoenum/issues)
 
 
-## How it Works
-Autoenum first runs 2 nmap scans in tandem, one scan looks specifically for service versions to run against searchsploit and the other is a scan dependent on the argument. Every scan profile checks for services running, the type of scan is the only difference. After the scans are finished, the services/ports open and operating systems along with script output (if avaliable) is extracted and further analyzed. If a certain service is found, Autoenum will begin enumerating by firing off a number of tools and create a dir for that service (i.e detecting http starts up nikto, wafw00f, gobuster, and others). If a dependency required is not detected, that dependency will be auto installed and checked if there is a new update everytime the tool is run. Autoenum outputs this information in 2 main sections(scan type and loot dirs) with sub directories branching off depending on what is found.
+## How It Works
+
+Autoenum automates the entire reconnaissance workflow with a **two-stage Nmap scan approach**:
+
+1. **Service Version Scan**  
+   Runs `nmap -sV` to detect service versions, enabling `searchsploit` to identify known exploits.
+
+2. **Targeted Scan (Based on Profile)**  
+   Executes a scan tailored to the selected profile (`aggr`, `reg`, `top 1k`, `top 10k`, `udp`, etc.), using optimized flags like `--min-rate 500`, `--max-parallelism 100`, and `--timeout 5` for speed and reliability.
+
+After scans complete, Autoenum:
+- Parses open ports and services from Nmap output
+- Detects the target OS using **TTL-based inference** (e.g., TTL 64 = Linux, 128 = Windows)
+- Extracts script output and service data
+- Identifies running services (e.g., HTTP, SMB, SNMP, FTP, LDAP)
+
+For each detected service, Autoenum **automatically launches targeted enumeration**:
+- **HTTP** → `gobuster`, `nikto`, `wafw00f`, `whatweb`, `sslscan`
+- **SMB** → `nmap`, `smbmap`, `rpcclient`, `smbclient`, `nmap vuln scripts`
+- **SNMP** → `onesixtyone`, `snmp-check`, `snmpwalk`
+- **LDAP** → `nmap`, `ldapsearch`, `ldapwhoami`
+- **FTP** → `nmap`, `ftp-anon`, `ftp-vuln-cve2010-4221`
+- **Oracle** → `nmap`, `odat`, `oscanner`
+- **NFS** → `nmap`, `mount` (auto-mounts discovered shares)
+
+> 🔥 **All tools run with `timeout`** to prevent hangs  
+> 📊 **Results are saved in structured directories**:  
+> - `scan/` – Nmap output, script results  
+> - `loot/` – Service-specific outputs (e.g., `loot/http/`, `loot/smb/`)  
+> - `loot/raw/` – Raw service detection files (e.g., `http_found`, `smb_found`)  
+
+If a required tool is missing, Autoenum **auto-installs it via `apt`** — no `pip`, `go`, or `curl | bash`. It also checks for updates on every run.
+
+> ✅ **All functionality is modular, safe, and CTF-ready**  
+> ✅ **No manual intervention required** — from scan to enumeration
+
 
 ## Installation
 ```
