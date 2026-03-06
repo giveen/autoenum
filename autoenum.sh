@@ -33,14 +33,19 @@ usage() {
 Autoenum v$VERSION
 Automated service enumeration for CTFs, HTB, VulnHub, OSCP, and real engagements.
 
-Usage: $(basename "$0") [OPTIONS]
+Usage: $(basename "$0") [TARGET] [OPTIONS]
+
+Arguments:
+  TARGET              Target IP or hostname (optional; prompts if omitted)
 
 Options:
   -nr, --no-resolve   Skip DNS resolution (use raw IP)
   -h, --help          Show this help
   -v, --version       Show version
 
-Example:
+Examples:
+  $(basename "$0") 10.129.1.93
+  $(basename "$0") 10.129.1.93 -nr
   $(basename "$0") -nr
 EOF
     exit 0
@@ -62,9 +67,14 @@ while [[ $# -gt 0 ]]; do
             echo "Autoenum v$VERSION"
             exit 0
             ;;
-        *)
+        -*)
             echo "Unknown option: $1"
             usage
+            ;;
+        *)
+            # Treat bare positional as target IP/hostname
+            export IP="$1"
+            shift
             ;;
     esac
 done
@@ -93,7 +103,10 @@ if [[ -n "$NO_RESOLVE" ]]; then
     sleep 0.5
 fi
 
-get_ip
+# Only prompt interactively if no IP was supplied on the command line
+if [[ -z "${IP:-}" ]]; then
+    get_ip
+fi
 halp_meh
 upgrade
 menu
