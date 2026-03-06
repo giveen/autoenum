@@ -138,9 +138,18 @@ menu (){
                         IP="$unchecked_IP"; tput setaf 4; echo -e "[+] IP set to $IP"; tput sgr0; echo -e
                     fi
                     rm -f "$cwd/tmp"
-                elif [[ $unchecked_IP =~ [a-zA-Z0-9]\.[a-z]$ ]] || [[ $unchecked_IP =~ [a-z]\.[a-zA-Z0-9]\.[a-z]$ ]]; then
-                    IP=$(host "$unchecked_IP" | head -n1 | awk '{print($4)}')
-                    tput setaf 4; echo -e "$unchecked_IP resolved to $IP\n"; tput sgr0
+                # Broad hostname match: anything with a dot that has at least one letter
+                # Covers dc01.corp.local, box.hackthebox.eu, target.internal, etc.
+                elif [[ $unchecked_IP =~ [a-zA-Z] ]] && [[ $unchecked_IP =~ \. ]]; then
+                    local resolved
+                    resolved=$(host "$unchecked_IP" 2>/dev/null | awk '/has address/{print $4; exit}')
+                    if [[ -n "$resolved" ]]; then
+                        IP="$resolved"
+                        tput setaf 4; echo -e "[+] $unchecked_IP resolved to $IP"; tput sgr0; echo -e
+                    else
+                        echo "[-] Could not resolve hostname: $unchecked_IP"
+                        echo "[-] Check DNS or use the raw IP instead."
+                    fi
                 elif [[ $unchecked_IP == "*" ]]; then
                     IP="dev"
                     tput setaf 4; echo -e "[+] IP set to dev (testing mode)"; tput sgr0

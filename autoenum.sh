@@ -19,6 +19,14 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NO_COLOR='\033[0m'
 
+# === SIGNAL HANDLING ===
+_autoenum_cleanup() {
+    echo -e "\n${RED}[!] Interrupted — killing background processes...${NO_COLOR}"
+    # kill 0 sends SIGTERM to every process in the process group (all nmap/gobuster jobs)
+    kill 0
+}
+trap '_autoenum_cleanup' SIGINT SIGTERM
+
 # === FUNCTIONS ===
 usage() {
     cat << EOF
