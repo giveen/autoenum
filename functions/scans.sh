@@ -180,7 +180,7 @@ reg() {
         fi
 
         # Service-specific files
-        local services=("http" "smb" "snmp" "ftp" "ldap" "smtp" "imap" "pop3" "oracle" "redis")
+        local services=("http" "smb" "snmp" "ftp" "ldap" "smtp" "imap" "pop3" "oracle" "redis" "rpc" "dns")
         for service in "${services[@]}"; do
             grep "$service" "$scan_dir/ports_and_services/services_running" | sort -u > "$loot/raw/${service}_found"
         done
@@ -279,7 +279,7 @@ aggr() {
         done
         awk -F'/' '/http/ {print $1}' "$IP/autoenum/aggr_scan/ports_and_services/services_running" | sort -u > "$loot/raw/http_found"
 
-        services=("smb" "snmp" "ftp" "ldap" "smtp" "imap" "pop3" "oracle" "redis")
+        services=("smb" "snmp" "ftp" "ldap" "smtp" "imap" "pop3" "oracle" "redis" "rpc" "dns")
         for service in "${services[@]}"; do
             grep "$service" "$IP/autoenum/aggr_scan/ports_and_services/services_running" | sort -u > "$loot/raw/${service}_found"
         done
@@ -340,7 +340,7 @@ top_1k() {
     # 3. Process services
     awk -F'/' '/open.*http/ {print $1}' "$t1k/ports_and_services/services" | sort -u > "$loot/raw/http_found"
     
-    services=("smb" "snmp" "ftp" "ldap" "smtp" "imap" "pop3" "oracle" "redis")
+    services=("smb" "snmp" "ftp" "ldap" "smtp" "imap" "pop3" "oracle" "redis" "rpc" "dns")
     for service in "${services[@]}"; do
         grep "$service" "$t1k/ports_and_services/services" | sort -u > "$loot/raw/${service}_found"
     done

@@ -293,9 +293,9 @@ ftp_enum() {
             -v "$IP" | tee -a "$loot/ftp/ftp_scripts" 2>/dev/null || {
             echo -e "${RED}[-] nmap FTP scan failed on port $port${NO_COLOR}"
         }
+        echo "nmap -sV -Pn -p $port --script=ftp-anon,ftp-bounce,ftp-libopie,ftp-proftpd-backdoor,ftp-vsftpd-backdoor,ftp-vuln-cve2010-4221,ftp-syst -v $IP" >> "$loot/ftp/cmds_run"
     done < <(awk '{print $1}' "$loot/raw/ftp_found" | cut -d'/' -f1)
 
-    echo "nmap -sV -Pn -p $port --script=ftp-anon,ftp-bounce,ftp-libopie,ftp-proftpd-backdoor,ftp-vsftpd-backdoor,ftp-vuln-cve2010-4221,ftp-syst -v $IP" >> "$loot/ftp/cmds_run"
     rm -f "$loot/ftp/port_list"
     rm -f "$loot/raw/ftp_found"
     echo -e "${GREEN}[+] FTP enum complete!${NO_COLOR}"
@@ -324,15 +324,14 @@ smtp_enum() {
             | tee -a "$loot/smtp/users" 2>/dev/null || {
             echo -e "${RED}[-] smtp-user-enum failed on port $port${NO_COLOR}"
         }
+        echo "nc -nvv $IP $port" >> "$loot/smtp/manual_cmds"
+        echo "telnet $IP $port" >> "$loot/smtp/manual_cmds"
+        echo "smtp-user-enum -M VRFY -U /usr/share/metasploit-framework/data/wordlists/unix_users.txt -t $IP -p $port" >> "$loot/smtp/cmds_run"
     done < <(awk '{print $1}' "$loot/raw/smtp_found" | cut -d'/' -f1)
 
-    if grep -q "0 results" "$loot/smtp/users"; then
+    if [[ -f "$loot/smtp/users" ]] && grep -q "0 results" "$loot/smtp/users"; then
         rm -f "$loot/smtp/users"
     fi
-
-    echo "nc -nvv $IP $port" >> "$loot/smtp/manual_cmds"
-    echo "telnet $IP $port" >> "$loot/smtp/manual_cmds"
-    echo "smtp-user-enum -M VRFY -U /usr/share/metasploit-framework/data/wordlists/unix_users.txt -t $IP -p $port" >> "$loot/smtp/cmds_run"
 
     rm -f "$loot/smtp/port_list"
     rm -f "$loot/raw/smtp_found"
@@ -559,21 +558,20 @@ smb_enum() {
     # SMB client checks
     (
         attempts=(
+            "smbclient -N -L //$IP"
             "smbclient -N -L \\\\\\\\$IP"
-            "smbclient -N -H \\\\\\$IP"
-            "smbclient -N -H \\$IP"
         )
 
         for attempt in "${attempts[@]}"; do
             eval "$attempt" > "$loot/smb/shares/smbclient_out" 2>&1
-            if ! grep -q "Not enough '\' characters in service" "$loot/smb/shares/smbclient_out"; then
+            if ! grep -q "Not enough '\\' characters in service" "$loot/smb/shares/smbclient_out"; then
                 break
             fi
         done
 
-        if grep -q "Not enough '\' characters in service" "$loot/smb/shares/smbclient_out"; then
+        if grep -q "Not enough '\\' characters in service" "$loot/smb/shares/smbclient_out"; then
             rm -f "$loot/smb/shares/smbclient_out"
-            echo "smbclient could not be automatically run, rerun smbclient -N -H [IP] manually" >> "$loot/smb/notes"
+            echo "smbclient could not be automatically run, rerun smbclient -N -L //[IP] manually" >> "$loot/smb/notes"
         fi
 
         if grep -q "Error NT_STATUS_UNSUCCESSFUL" "$loot/smb/shares/smbclient_out"; then
