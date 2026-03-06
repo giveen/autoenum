@@ -397,19 +397,24 @@ http_enum() {
     mapfile -t ports < "$loot/raw/http_found"
     pct=${#ports[@]}
 
-    # Service verification
-    verify_http_service() {
+    # Detect whether a port speaks HTTP or HTTPS; echoes the working scheme.
+    detect_http_scheme() {
         local port="$1"
-        local timeout=3
+        local chk_timeout=3
 
-        # Fast curl check
-        if curl -sI -m "$timeout" "http://$IP:$port" &>/dev/null; then
-            return 0
+        # HTTP first
+        if curl -sI -m "$chk_timeout" "http://$IP:$port" &>/dev/null; then
+            echo "http"; return 0
         fi
 
-        # Netcat fallback
-        if echo -e "HEAD / HTTP/1.1\r\nHost: $IP\r\n\r\n" | nc -w "$timeout" "$IP" "$port" | grep -iq "HTTP/"; then
-            return 0
+        # HTTPS (skip cert validation)
+        if curl -sIk -m "$chk_timeout" "https://$IP:$port" &>/dev/null; then
+            echo "https"; return 0
+        fi
+
+        # Netcat fallback (plain HTTP)
+        if echo -e "HEAD / HTTP/1.1\r\nHost: $IP\r\n\r\n" | nc -w "$chk_timeout" "$IP" "$port" | grep -iq "HTTP/"; then
+            echo "http"; return 0
         fi
 
         return 1
@@ -419,16 +424,17 @@ http_enum() {
     run_gobuster() {
         local port="$1"
         local port_dir="$2"
+        local scheme="${3:-http}"
 
-        if ! curl -sI -m 5 "http://$IP:$port" &>/dev/null; then
+        if ! curl -sIk -m 5 "$scheme://$IP:$port" &>/dev/null; then
             echo -e "${RED}[-] Port $port unresponsive - skipping gobuster${NO_COLOR}"
             return
         fi
 
-        echo -e "${YELLOW}[+] Bruteforcing directories (port $port)${NO_COLOR}"
+        echo -e "${YELLOW}[+] Bruteforcing directories ($scheme port $port)${NO_COLOR}"
         timeout 300 gobuster dir \
             -t 40 \
-            -u "http://$IP:$port" \
+            -u "$scheme://$IP:$port" \
             -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt \
             -o "$port_dir/dirs_found" \
             -k \
@@ -454,15 +460,17 @@ http_enum() {
 
         echo -e "${YELLOW}[+] Processing port $port${NO_COLOR}"
 
-        if ! verify_http_service "$port"; then
-            echo -e "${RED}[-] No HTTP service on port $port - skipping${NO_COLOR}"
+        local scheme
+        scheme=$(detect_http_scheme "$port") || {
+            echo -e "${RED}[-] No HTTP/HTTPS service on port $port - skipping${NO_COLOR}"
             return
-        fi
+        }
+        echo -e "${CYAN}[+] Port $port using scheme: $scheme${NO_COLOR}"
 
         # Run in parallel
         (
             echo -e "${YELLOW}[+] Nikto scan${NO_COLOR}"
-            timeout 120 nikto -ask=no -h "$IP:$port" -T 123b >> "$port_dir/nikto" 2>&1
+            timeout 120 nikto -ask=no -h "$scheme://$IP:$port" -T 123b >> "$port_dir/nikto" 2>&1
         ) &
 
         (
@@ -472,28 +480,28 @@ http_enum() {
 
         (
             echo -e "${YELLOW}[+] Fetching pages${NO_COLOR}"
-            curl -sSiLk -m 15 "$IP:$port/index.html" >> "$port_dir/landingpage" 2>&1
-            curl -sSiLk -m 10 "$IP:$port/robots.txt" >> "$port_dir/robots.txt" 2>&1
+            curl -sSiLk -m 15 "$scheme://$IP:$port/index.html" >> "$port_dir/landingpage" 2>&1
+            curl -sSiLk -m 10 "$scheme://$IP:$port/robots.txt" >> "$port_dir/robots.txt" 2>&1
         ) &
 
         (
             echo -e "${YELLOW}[+] WhatWeb scan${NO_COLOR}"
-            timeout 90 whatweb -a3 "$IP:$port" >> "$port_dir/whatweb" 2>&1
+            timeout 90 whatweb -a3 "$scheme://$IP:$port" >> "$port_dir/whatweb" 2>&1
         ) &
 
         wait
 
         # Run gobuster
-        run_gobuster "$port" "$port_dir"
+        run_gobuster "$port" "$port_dir" "$scheme"
 
         # Log commands
         {
-            echo "verify_http_service $port"
-            echo "nikto -ask=no -h $IP:$port -T 123b"
+            echo "detect_http_scheme $port  # detected: $scheme"
+            echo "nikto -ask=no -h $scheme://$IP:$port -T 123b"
             echo "sslscan --show-certificate $IP:$port"
-            echo "curl -sSiLk $IP:$port/{index.html,robots.txt}"
-            echo "whatweb -a3 $IP:$port"
-            echo "gobuster dir -u http://$IP:$port -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -o $port_dir/dirs_found -k --timeout 8s --delay 200ms --status-codes 200,204,301,302,307,401,403,500 --status-codes-blacklist \"\""
+            echo "curl -sSiLk $scheme://$IP:$port/{index.html,robots.txt}"
+            echo "whatweb -a3 $scheme://$IP:$port"
+            echo "gobuster dir -u $scheme://$IP:$port -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -o $port_dir/dirs_found -k --timeout 8s --delay 200ms --status-codes 200,204,301,302,307,401,403,500"
         } >> "$port_dir/cmds_run"
     }
 

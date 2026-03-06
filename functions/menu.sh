@@ -143,11 +143,11 @@ menu (){
                     tput setaf 4; echo -e "$unchecked_IP resolved to $IP\n"; tput sgr0
                 elif [[ $unchecked_IP == "*" ]]; then
                     IP="dev"
+                    tput setaf 4; echo -e "[+] IP set to dev (testing mode)"; tput sgr0
                 else
                     echo "[-] Invalid IP detected."
                     echo "[-] Example: 192.168.1.5"
                 fi
-                echo "[*] IP changed to $IP"
                 ;;
 #                "use amass")
 #                        echo "[*] OWASP amass set to use"
