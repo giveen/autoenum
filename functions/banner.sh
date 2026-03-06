@@ -22,7 +22,7 @@ banner() {
     echo -e "${CYAN}                                                             ${NO_COLOR}"
 
     # Author credits
-    echo -e "${BOLD}${CYAN}Author: giveen${NO_COLOR} (You)"
+    echo -e "${BOLD}${CYAN}Author: giveen${NO_COLOR}"
     echo -e "${BOLD}${BLUE}Original Author: Grimmie${NO_COLOR}"
     echo -e "${BOLD}${CYAN}Version: ${VERSION:-unknown}${NO_COLOR}"
 
