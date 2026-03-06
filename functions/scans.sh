@@ -84,6 +84,22 @@ _tag_os_from_scan() {
     if (( win_port_count >= 2 )) || (( os_says_windows )); then
         echo -e "${GREEN}[+] Windows target confirmed (${win_port_count} Windows ports) — enabling windows_enum${NO_COLOR}"
         echo "windows_confirmed" > "$loot/raw/windows_found"
+        return 0
+    fi
+
+    # Linux detection: SSH open and no Windows OS fingerprint
+    local os_says_linux=0
+    if [[ -s "${os_file:-}" ]] && grep -qi "linux\|unix" "$os_file" 2>/dev/null; then
+        os_says_linux=1
+    fi
+    local has_ssh=0
+    if grep -qE "^22/|^2222/" "$services_file" 2>/dev/null; then
+        has_ssh=1
+    fi
+
+    if (( has_ssh )) || (( os_says_linux )); then
+        echo -e "${GREEN}[+] Linux target indicated (SSH present / OS fingerprint) — enabling linux_enum${NO_COLOR}"
+        echo "linux_confirmed" > "$loot/raw/linux_found"
     fi
 }
 

