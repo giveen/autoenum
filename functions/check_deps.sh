@@ -29,6 +29,12 @@ declare -a REQUIRED_TOOLS=(
     "pip3"
 )
 
+# === Data packages checked by directory/file presence rather than command -v ===
+# Format: "apt_package_name:path_to_check"
+declare -a REQUIRED_DATA_PACKAGES=(
+    "seclists:/usr/share/seclists"
+)
+
 # === Helper Functions ===
 
 log() {
@@ -82,6 +88,32 @@ install_missing_tools() {
     success "All tools installed successfully!"
 }
 
+# === Install missing data packages (checked by path, not command) ===
+install_missing_data_packages() {
+    local missing=()
+    for entry in "${REQUIRED_DATA_PACKAGES[@]}"; do
+        local pkg="${entry%%:*}"
+        local path="${entry##*:}"
+        if [[ ! -e "$path" ]]; then
+            missing+=("$pkg")
+        fi
+    done
+
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        info "All required data packages are present."
+        return 0
+    fi
+
+    info "Installing missing data packages: ${missing[*]}..."
+
+    if ! sudo apt install -y "${missing[@]}"; then
+        error "Failed to install some data packages. Check your internet connection or try again."
+        exit 1
+    fi
+
+    success "All data packages installed successfully!"
+}
+
 # === MAIN ===
 
 # Parse arguments
@@ -96,5 +128,8 @@ check_apt
 
 # Check and install missing tools
 install_missing_tools
+
+# Check and install missing data packages
+install_missing_data_packages
 
 exit 0
