@@ -125,15 +125,11 @@ _run_searchsploit() {
         return 0
     fi
     echo -e "${CYAN}[+] Running SearchSploit on ${label} results...${NO_COLOR}"
+    # Capture stdout+stderr so [i]/[-] info lines are preserved in the file and on screen
     searchsploit -j --nmap "$xml" > "$out_json" 2>/dev/null || true
-    searchsploit --nmap "$xml" > "$out_txt" 2>/dev/null || true
-    # Print to screen if real exploit rows exist (filter headers/no-results lines)
-    if [[ -s "$out_txt" ]] && grep -qvE '^\s*$|No Results|={5,}|Exploit Title|^Path$|\[i\]|\[-\]' "$out_txt" 2>/dev/null; then
-        echo -e "${YELLOW}[+] SearchSploit — potential exploits found (saved: ${out_txt}):${NO_COLOR}"
-        cat "$out_txt"
-    else
-        echo -e "${YELLOW}[-] SearchSploit: no matching exploits for ${label}${NO_COLOR}"
-    fi
+    searchsploit --nmap "$xml" > "$out_txt" 2>&1 || true
+    cat "$out_txt"
+    echo -e "${CYAN}[+] SearchSploit results saved: ${out_txt}${NO_COLOR}"
 }
 
 enum_goto() {
