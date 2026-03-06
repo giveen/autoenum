@@ -116,6 +116,26 @@ _print_port_summary() {
     echo -e "${BOLD}${GREEN}  └───────────────────────────────────────────────────────${NO_COLOR}"
 }
 
+# Run searchsploit --nmap on an XML file, save results to loot, and print to screen.
+# Usage: _run_searchsploit <xml_file> <label> <out_txt> <out_json>
+_run_searchsploit() {
+    local xml="$1" label="$2" out_txt="$3" out_json="$4"
+    if [[ ! -s "$xml" ]]; then
+        echo -e "${YELLOW}[-] SearchSploit: no XML output to analyse (${label})${NO_COLOR}"
+        return 0
+    fi
+    echo -e "${CYAN}[+] Running SearchSploit on ${label} results...${NO_COLOR}"
+    searchsploit -j --nmap "$xml" > "$out_json" 2>/dev/null || true
+    searchsploit --nmap "$xml" > "$out_txt" 2>/dev/null || true
+    # Print to screen if real exploit rows exist (filter headers/no-results lines)
+    if [[ -s "$out_txt" ]] && grep -qvE '^\s*$|No Results|={5,}|Exploit Title|^Path$|\[i\]|\[-\]' "$out_txt" 2>/dev/null; then
+        echo -e "${YELLOW}[+] SearchSploit — potential exploits found (saved: ${out_txt}):${NO_COLOR}"
+        cat "$out_txt"
+    else
+        echo -e "${YELLOW}[-] SearchSploit: no matching exploits for ${label}${NO_COLOR}"
+    fi
+}
+
 enum_goto() {
     # Configuration
     local MAX_PARALLEL=4  # Optimal for most systems
@@ -306,10 +326,8 @@ reg() {
         sed -n '/PORT/,/exact/p' "$scan_dir/raw/full_scan" | sed '$d' > "$scan_dir/ports_and_services/script_output"
 
         # Searchsploit processing
-        if [[ -s "$scan_dir/raw/full_scan.xml" ]]; then
-            searchsploit -j --nmap "$scan_dir/raw/full_scan.xml" > "$loot/exploits/searchsploit_nmap.json" 2>/dev/null || true
-            searchsploit --nmap "$scan_dir/raw/full_scan.xml" > "$loot/exploits/searchsploit_nmap" 2>/dev/null || true
-        fi
+        _run_searchsploit "$scan_dir/raw/full_scan.xml" "reg scan" \
+            "$loot/exploits/searchsploit_nmap" "$loot/exploits/searchsploit_nmap.json"
 
         # Service-specific files
         local services=("http" "smb" "snmp" "ftp" "ldap" "smtp" "imap" "pop3" "oracle" "redis" "rpc" "dns")
@@ -378,16 +396,9 @@ aggr() {
             sleep 1
         done
 
-        # Try XML parsing first, fall back to text if it fails
-        if searchsploit -j --nmap "$IP/autoenum/aggr_scan/raw/xml_out" > "$loot/exploits/aggr_searchsploit_nmap.json" 2>/dev/null; then
-            searchsploit --nmap "$IP/autoenum/aggr_scan/raw/xml_out" > "$loot/exploits/aggr_searchsploit_nmap" 2>/dev/null || true
-        else
-            echo -e "${RED}[-] XML parsing failed. Falling back to text-based exploit matching.${NO_COLOR}"
-            grep -Eo "([0-9]{1,5}/tcp|udp).*open" "$IP/autoenum/aggr_scan/raw/full_scan" | \
-            while read -r service; do
-                searchsploit "$(echo "$service" | awk '{print $3}')" | grep -v "No Results" >> "$loot/exploits/aggr_searchsploit_nmap" 2>/dev/null || true
-            done
-        fi
+        # Run searchsploit on XML output
+        _run_searchsploit "$IP/autoenum/aggr_scan/raw/xml_out" "aggr scan" \
+            "$loot/exploits/aggr_searchsploit_nmap" "$loot/exploits/aggr_searchsploit_nmap.json"
     ) &
     local _aggr2_pid=$!
 
@@ -469,20 +480,8 @@ top_1k() {
         -oN "$t1k/ports_and_services/services" "$IP" > /dev/null 2>&1
 
     # 2. Validate XML before SearchSploit
-    if [[ -s "$t1k/raw/xml_out" ]] && grep -q "<nmaprun" "$t1k/raw/xml_out"; then
-        echo -e "${YELLOW}[+] Running SearchSploit (XML mode)${NO_COLOR}"
-        searchsploit -j --nmap "$t1k/raw/xml_out" > "$loot/exploits/top_1k_searchsploit_nmap.json" 2>/dev/null || true
-        searchsploit --nmap "$t1k/raw/xml_out" > "$loot/exploits/top_1k_searchsploit_nmap" 2>/dev/null || true
-
-        # Fallback if XML parsing fails
-        if grep -q "parser error" "$loot/exploits/top_1k_searchsploit_nmap.json"; then
-            echo -e "${RED}[-] XML parsing failed, switching to text mode${NO_COLOR}"
-            searchsploit --nmap "$t1k/ports_and_services/services" > "$loot/exploits/top_1k_searchsploit_nmap" 2>/dev/null || true
-        fi
-    else
-        echo -e "${RED}[-] Invalid XML, using text output${NO_COLOR}"
-        searchsploit --nmap "$t1k/ports_and_services/services" > "$loot/exploits/top_1k_searchsploit_nmap" 2>/dev/null || true
-    fi
+    _run_searchsploit "$t1k/raw/xml_out" "top 1k scan" \
+        "$loot/exploits/top_1k_searchsploit_nmap" "$loot/exploits/top_1k_searchsploit_nmap.json"
 
     # 3. Process services
     awk -F'/' '/open.*http/ {print $1}' "$t1k/ports_and_services/services" | sort -u > "$loot/raw/http_found"
@@ -539,13 +538,8 @@ top_10k() {
     # Process results
     process_results() {
         # SearchSploit processing
-        if [[ -s "$scan_dir/raw/xml_out" ]]; then
-            echo -e "${CYAN}[+] Running SearchSploit analysis${NO_COLOR}"
-            searchsploit -j --nmap "$scan_dir/raw/xml_out" > "$loot/exploits/top_10k_searchsploit_nmap.json" 2>/dev/null || true
-            searchsploit --nmap "$scan_dir/raw/xml_out" > "$loot/exploits/top_10k_searchsploit_nmap" 2>/dev/null || true
-        else
-            echo -e "${RED}[-] XML output missing or empty - skipping SearchSploit${NO_COLOR}"
-        fi
+        _run_searchsploit "$scan_dir/raw/xml_out" "top 10k scan" \
+            "$loot/exploits/top_10k_searchsploit_nmap" "$loot/exploits/top_10k_searchsploit_nmap.json"
 
         # Extract open ports
         { grep 'open' "$scan_dir/raw/services" || true; } > "$scan_dir/ports_and_services/services"
