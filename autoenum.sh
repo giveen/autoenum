@@ -17,6 +17,7 @@ AUTOENUM_SESSION=$(tmux display-message -p '#S' 2>/dev/null || echo "autoenum")
 
 # === CONFIGURATION ===
 DIR=$(dirname "$(readlink -f "$0")")
+export DIR
 VERSION="3.0.3"
 
 # === COLORS ===

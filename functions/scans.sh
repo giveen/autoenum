@@ -141,37 +141,48 @@ _launch_in_window() {
     local _script
     _script=$(mktemp /tmp/ae-XXXX.sh)
 
-    # Build the script using printf so there are no heredoc expansion surprises
-    {
-        printf '#!/bin/bash\n'
-        printf 'set +euo pipefail\n'
-        printf "RED='\\033[0;31m' GREEN='\\033[0;32m' YELLOW='\\033[1;33m'\n"
-        printf "BLUE='\\033[0;34m' CYAN='\\033[0;36m' BOLD='\\033[1m' NO_COLOR='\\033[0m'\n"
-        printf '\n'
-        # Embed the full function definition
-        declare -f "$func"
-        printf '\n'
-        printf "IP='%s'\n" "$IP"
-        printf "loot='%s'\n" "$loot"
-        printf '\n'
-        printf 'echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NO_COLOR}"\n'
-        printf 'echo -e "${BOLD}${CYAN}  Window: %s${NO_COLOR}  •  IP: %s"\n' "$func" "$IP"
-        printf 'echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NO_COLOR}"\n'
-        printf '\n'
-        printf 'timeout %s %s\n' "$timeout" "$func"
-        printf '_exit=$?\n'
-        printf '\n'
-        printf "touch '%s/%s.done'\n" "$done_dir" "$func"
-        printf '\n'
-        printf 'echo ""\n'
-        printf 'if (( _exit == 124 )); then\n'
-        printf '    echo -e "${YELLOW}[!] %s timed out after %ss${NO_COLOR}"\n' "$func" "$timeout"
-        printf 'fi\n'
-        printf 'echo -e "${BOLD}${GREEN}━━━  %s finished  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NO_COLOR}"\n' "$func"
-        printf 'echo -e "    Loot: %s"\n' "$loot"
-        printf 'echo -e "${CYAN}  Window stays open — close with: prefix+& or exit${NO_COLOR}"\n'
-        printf 'exec $SHELL\n'
-    } > "$_script"
+    # Build script that sources the real libraries so all helpers are available
+    cat > "$_script" << ENDSCRIPT
+#!/bin/bash
+set +euo pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NO_COLOR='\033[0m'
+
+# Target and loot path from parent
+export IP='$IP'
+export loot='$loot'
+
+# Source the libraries so all helpers / enum functions are available
+source '${DIR}/functions/scans.sh'
+source '${DIR}/functions/enum.sh'
+
+echo -e "\${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${NO_COLOR}"
+echo -e "\${BOLD}\${CYAN}  $func  •  $IP\${NO_COLOR}"
+echo -e "\${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${NO_COLOR}"
+echo ""
+
+timeout $timeout $func
+_exit=\$?
+
+touch '${done_dir}/${func}.done'
+
+echo ""
+if (( _exit == 124 )); then
+    echo -e "\${YELLOW}[!] $func timed out after ${timeout}s\${NO_COLOR}"
+fi
+echo -e "\${BOLD}\${GREEN}━━━  $func finished  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${NO_COLOR}"
+echo -e "    Loot: $loot"
+echo -e "\${CYAN}  Window stays open — close with: prefix+& or exit\${NO_COLOR}"
+exec \$SHELL
+ENDSCRIPT
+
     chmod +x "$_script"
 
     # Open a new tmux window (don't switch focus: -d) running the scan script
