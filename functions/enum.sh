@@ -185,7 +185,64 @@ pop3_enum() {
 }
 
 imap_enum() {
-    echo -e "${YELLOW}[+] Work in progress${NO_COLOR}"
+    local timeout="${1:-300}"
+    local dry_run="${2:-}"
+
+    if [[ "$dry_run" == "--dry-run" ]]; then
+        echo -e "${YELLOW}[+] Would run imap_enum on $IP (ports 143, 993)${NO_COLOR}"
+        return 0
+    fi
+
+    echo -e "${GREEN}[+] Starting IMAP enumeration...${NO_COLOR}"
+    mkdir -p "$loot/imap"
+
+    # Service version detection on both plain and SSL ports
+    (
+        echo -e "${YELLOW}[+] IMAP service version scan (143, 993)${NO_COLOR}"
+        timeout "$timeout" nmap -p 143,993 -sV \
+            --host-timeout 60s \
+            "$IP" | tee "$loot/imap/version_scan" 2>/dev/null || {
+            echo -e "${RED}[-] IMAP version scan failed${NO_COLOR}"
+        }
+        echo "nmap -p 143,993 -sV $IP" >> "$loot/imap/cmds_run"
+    ) &
+
+    # Server capabilities
+    (
+        echo -e "${YELLOW}[+] Enumerating IMAP capabilities${NO_COLOR}"
+        timeout "$timeout" nmap -p 143 \
+            --script imap-capabilities \
+            "$IP" | tee "$loot/imap/capabilities" 2>/dev/null || {
+            echo -e "${RED}[-] imap-capabilities script failed${NO_COLOR}"
+        }
+        echo "nmap -p 143 --script imap-capabilities $IP" >> "$loot/imap/cmds_run"
+    ) &
+
+    # NTLM info (leaks hostname, domain, OS version on Exchange/Outlook servers)
+    (
+        echo -e "${YELLOW}[+] Extracting NTLM authentication details${NO_COLOR}"
+        timeout "$timeout" nmap -p 143 \
+            --script imap-ntlm-info \
+            "$IP" | tee "$loot/imap/ntlm_info" 2>/dev/null || {
+            echo -e "${RED}[-] imap-ntlm-info script failed${NO_COLOR}"
+        }
+        echo "nmap -p 143 --script imap-ntlm-info $IP" >> "$loot/imap/cmds_run"
+    ) &
+
+    wait
+
+    # Clean up empty output files
+    find "$loot/imap" -type f ! -name "cmds_run" -empty -delete 2>/dev/null
+
+    # Log manual follow-up commands
+    {
+        echo "telnet $IP 143"
+        echo "openssl s_client -connect $IP:993"
+        echo "curl -v --ssl imaps://$IP/"
+    } >> "$loot/imap/manual_cmds"
+
+    rm -f "$loot/raw/imap_found"
+    echo -e "${GREEN}[+] IMAP enum complete!${NO_COLOR}"
 }
 
 ldap_enum() {
