@@ -6,6 +6,15 @@
 
 set -euo pipefail
 
+# === TMUX AUTO-LAUNCH ===
+# If not already inside tmux, re-exec into a new named session so secondary
+# scans can open their own windows that the user can switch between.
+if [[ -z "${TMUX:-}" ]]; then
+    exec tmux new-session -s autoenum "$0" "$@"
+fi
+export AUTOENUM_SESSION
+AUTOENUM_SESSION=$(tmux display-message -p '#S' 2>/dev/null || echo "autoenum")
+
 # === CONFIGURATION ===
 DIR=$(dirname "$(readlink -f "$0")")
 VERSION="3.0.3"

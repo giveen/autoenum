@@ -28,6 +28,7 @@ declare -a REQUIRED_TOOLS=(
     "python3"
     "pip3"
     "nxc"
+    "tmux"
 )
 
 # === Data packages checked by path presence rather than command -v ===

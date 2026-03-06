@@ -132,10 +132,55 @@ _run_searchsploit() {
     echo -e "${CYAN}[+] SearchSploit results saved: ${out_txt}${NO_COLOR}"
 }
 
+
+# Write a self-contained scan script to a temp file and launch it in a new
+# tmux window.  The script signals completion by touching a done-file.
+# Usage: _launch_in_window <func> <label> <done_dir> <timeout>
+_launch_in_window() {
+    local func="$1" label="$2" done_dir="$3" timeout="$4"
+    local _script
+    _script=$(mktemp /tmp/ae-XXXX.sh)
+
+    # Build the script using printf so there are no heredoc expansion surprises
+    {
+        printf '#!/bin/bash\n'
+        printf 'set +euo pipefail\n'
+        printf "RED='\\033[0;31m' GREEN='\\033[0;32m' YELLOW='\\033[1;33m'\n"
+        printf "BLUE='\\033[0;34m' CYAN='\\033[0;36m' BOLD='\\033[1m' NO_COLOR='\\033[0m'\n"
+        printf '\n'
+        # Embed the full function definition
+        declare -f "$func"
+        printf '\n'
+        printf "IP='%s'\n" "$IP"
+        printf "loot='%s'\n" "$loot"
+        printf '\n'
+        printf 'echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NO_COLOR}"\n'
+        printf 'echo -e "${BOLD}${CYAN}  Window: %s${NO_COLOR}  •  IP: %s"\n' "$func" "$IP"
+        printf 'echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NO_COLOR}"\n'
+        printf '\n'
+        printf 'timeout %s %s\n' "$timeout" "$func"
+        printf '_exit=$?\n'
+        printf '\n'
+        printf "touch '%s/%s.done'\n" "$done_dir" "$func"
+        printf '\n'
+        printf 'echo ""\n'
+        printf 'if (( _exit == 124 )); then\n'
+        printf '    echo -e "${YELLOW}[!] %s timed out after %ss${NO_COLOR}"\n' "$func" "$timeout"
+        printf 'fi\n'
+        printf 'echo -e "${BOLD}${GREEN}━━━  %s finished  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NO_COLOR}"\n' "$func"
+        printf 'echo -e "    Loot: %s"\n' "$loot"
+        printf 'echo -e "${CYAN}  Window stays open — close with: prefix+& or exit${NO_COLOR}"\n'
+        printf 'exec $SHELL\n'
+    } > "$_script"
+    chmod +x "$_script"
+
+    # Open a new tmux window (don't switch focus: -d) running the scan script
+    tmux new-window -d -n "$func" -- bash "$_script"
+
+    echo -e "${GREEN}  [$(date '+%H:%M:%S')] ▶ ${func} (${label})  →  tmux window '${func}'${NO_COLOR}"
+}
+
 enum_goto() {
-    # Configuration
-    local MAX_PARALLEL=4  # Optimal for most systems
-    local running=0
     local timeout="${1:-300}"
     _ensure_loot || return 1
 
@@ -196,53 +241,74 @@ enum_goto() {
         return 0
     fi
 
-    # Detected services summary
     if (( ${#found_services[@]} > 0 )); then
         echo -e "${GREEN}  Services detected : ${found_services[*]}${NO_COLOR}"
     fi
     if (( ${#found_os_services[@]} > 0 )); then
         echo -e "${YELLOW}  OS-specific       : ${found_os_services[*]}${NO_COLOR}"
     fi
-    echo -e "${CYAN}  Timeout per scan  : ${timeout}s   Max parallel: ${MAX_PARALLEL}${NO_COLOR}"
+    echo -e "${CYAN}  Timeout per scan  : ${timeout}s${NO_COLOR}"
+    echo -e "${CYAN}  tmux session      : ${AUTOENUM_SESSION:-autoenum}${NO_COLOR}"
+    echo -e "${CYAN}  Switch windows    : prefix+w  or  prefix+[n]${NO_COLOR}"
     echo -e "${BOLD}${CYAN}──────────────────────────────────────────────────────${NO_COLOR}\n"
 
-    # ── Launch service enums (parallel) ───────────────────────────────────────
+    # Shared done-file directory for completion tracking
+    local _done_dir
+    _done_dir=$(mktemp -d /tmp/ae-done-XXXX)
+
     local launched=()
+
+    # ── Launch service enums — each in its own tmux window ────────────────────
     for i in "${!found_funcs[@]}"; do
         local file="${found_services[$i]}"
         local func="${found_funcs[$i]}"
-
-        while (( running >= MAX_PARALLEL )); do
-            wait -n
-            (( running-- ))
-        done
-
-        echo -e "${GREEN}  [$(date '+%H:%M:%S')] ▶ Launching ${func} (${file})${NO_COLOR}"
-        ( timeout "$timeout" bash -c "
-            RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m'
-            BLUE='\033[0;34m' CYAN='\033[0;36m' BOLD='\033[1m' NO_COLOR='\033[0m'
-            $(declare -f "$func")
-            IP='$IP' loot='$loot' $func
-        " || echo -e "${RED}  [-] ${func} timed out or failed${NO_COLOR}" ) &
-        (( running++ ))
+        _launch_in_window "$func" "$file" "$_done_dir" "$timeout"
         launched+=("$func")
+        sleep 0.2   # slight stagger to avoid simultaneous nmap startups
     done
 
-    # Wait for all parallel jobs
-    wait
+    # ── Wait for all service enum windows to finish ───────────────────────────
+    if (( ${#launched[@]} > 0 )); then
+        local _deadline=$(( $(date +%s) + timeout + 30 ))
+        local _spin_chars='|/-\'
+        local _spin_i=0
+        echo -e "${CYAN}  Waiting for service scans to finish (scans visible in tmux windows above)${NO_COLOR}"
+        while true; do
+            local _done_count
+            _done_count=$(find "$_done_dir" -name "*.done" 2>/dev/null | wc -l)
+            (( _done_count >= ${#launched[@]} )) && break
+            (( $(date +%s) > _deadline )) && {
+                echo -e "\n${YELLOW}  [!] Timed out waiting for service scans${NO_COLOR}"
+                break
+            }
+            printf '\r  %s  %d / %d complete ...' "${_spin_chars:$(( _spin_i % ${#_spin_chars} )):1}" "$_done_count" "${#launched[@]}"
+            (( _spin_i++ ))
+            sleep 1
+        done
+        printf '\r%60s\r' ''  # clear spinner line
+    fi
 
-    # ── OS-specific enums (sequential, after service enums finish) ─────────────
+    # ── OS-specific enums — each in its own window, waited on in sequence ─────
     for i in "${!found_os_funcs[@]}"; do
         local file="${found_os_services[$i]}"
         local func="${found_os_funcs[$i]}"
-        echo -e "${YELLOW}  [$(date '+%H:%M:%S')] ▶ Launching ${func} (OS: ${file})${NO_COLOR}"
-        timeout "$timeout" bash -c "
-            RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m'
-            BLUE='\033[0;34m' CYAN='\033[0;36m' BOLD='\033[1m' NO_COLOR='\033[0m'
-            $(declare -f "$func")
-            IP='$IP' loot='$loot' $func
-        " || echo -e "${RED}  [-] ${func} failed${NO_COLOR}"
+        _launch_in_window "$func" "OS: $file" "$_done_dir" "$timeout"
         launched+=("$func")
+
+        # Wait until this OS scan signals done (OS scans depend on service results)
+        local _os_deadline=$(( $(date +%s) + timeout + 30 ))
+        local _spin_i=0
+        echo -e "${CYAN}  Waiting for ${func} to finish...${NO_COLOR}"
+        while [[ ! -f "${_done_dir}/${func}.done" ]]; do
+            (( $(date +%s) > _os_deadline )) && {
+                echo -e "${YELLOW}  [!] ${func} timed out${NO_COLOR}"
+                break
+            }
+            printf '\r  %s  running ...' "${_spin_chars:$(( _spin_i % ${#_spin_chars} )):1}"
+            (( _spin_i++ ))
+            sleep 1
+        done
+        printf '\r%60s\r' ''
     done
 
     # ── Summary ───────────────────────────────────────────────────────────────
@@ -252,9 +318,11 @@ enum_goto() {
         echo -e "${GREEN}  Scans run : ${launched[*]}${NO_COLOR}"
     fi
     echo -e "${CYAN}  Loot dir  : $loot${NO_COLOR}"
+    echo -e "${CYAN}  Results in tmux windows — switch with: prefix+w${NO_COLOR}"
     echo -e "${BOLD}${CYAN}══════════════════════════════════════════════════════${NO_COLOR}\n"
 
-    # Cleanup empty files
+    # Cleanup
+    rm -rf "$_done_dir"
     find "$loot/raw" -type f -empty -delete 2>/dev/null
 }
 
