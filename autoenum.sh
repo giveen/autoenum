@@ -87,4 +87,5 @@ fi
 
 get_ip
 halp_meh
+upgrade
 menu

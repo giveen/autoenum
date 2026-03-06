@@ -117,7 +117,6 @@ enum_goto() {
 
 reg() {
     banner
-    upgrade
     OS_guess
 
     # Directory setup
@@ -197,7 +196,6 @@ reg() {
 aggr() {
     local timeout="${1:-300}"
     banner
-    upgrade
     OS_guess
 
     # Directory setup
@@ -295,7 +293,6 @@ aggr() {
 
 top_1k() {
     banner
-    upgrade
     OS_guess
 
     # Directory setup
@@ -353,7 +350,6 @@ top_1k() {
 
 top_10k() {
     banner
-    upgrade
     OS_guess
 
     # Directory setup
@@ -369,43 +365,17 @@ top_10k() {
     ) &
     local _progress_pid=$!
 
-    echo -e "${YELLOW}[+] Starting top 10k port scan with parallel execution${NO_COLOR}"
+    echo -e "${YELLOW}[+] Starting top 10k port scan${NO_COLOR}"
 
-    # Run scans in parallel with performance optimizations
-    (
-        echo -e "${BLUE}[+] Running service detection scan (min-rate 500)${NO_COLOR}"
-        nmap --top-ports 10000 -sV \
-            --min-rate 500 \
-            --max-retries 1 \
-            --host-timeout 300s \
-            --max-rtt-timeout 1000ms \
-            "$IP" \
-            -oN "$scan_dir/raw/services"
-    ) &
-
-    (
-        echo -e "${BLUE}[+] Running script scan${NO_COLOR}"
-        nmap --top-ports 10000 -sC \
-            --min-rate 500 \
-            --max-retries 1 \
-            --host-timeout 300s \
-            --max-rtt-timeout 1000ms \
-            "$IP" \
-            -oN "$scan_dir/raw/scripts"
-    ) &
-
-    (
-        echo -e "${BLUE}[+] Generating XML output (min-rate 250)${NO_COLOR}"
-        nmap --top-ports 10000 -sV \
-            --min-rate 250 \
-            --max-retries 1 \
-            --host-timeout 300s \
-            --max-rtt-timeout 1000ms \
-            "$IP" \
-            -oX "$scan_dir/raw/xml_out"
-    ) &
-
-    wait
+    # Single combined scan: service detection + scripts + both output formats
+    nmap --top-ports 10000 -sV -sC \
+        --min-rate 500 \
+        --max-retries 1 \
+        --host-timeout 300s \
+        --max-rtt-timeout 1000ms \
+        "$IP" \
+        -oN "$scan_dir/raw/services" \
+        -oX "$scan_dir/raw/xml_out"
 
     # Kill progress loop
     kill "$_progress_pid" 2>/dev/null || true
@@ -452,7 +422,6 @@ top_10k() {
 
 udp() {
     banner
-    upgrade
     OS_guess
     
     # Directory setup
