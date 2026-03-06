@@ -168,15 +168,12 @@ echo -e "\${BOLD}\${CYAN}  $func  •  $IP\${NO_COLOR}"
 echo -e "\${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${NO_COLOR}"
 echo ""
 
-timeout $timeout $func
+$func
 _exit=\$?
 
 touch '${done_dir}/${func}.done'
 
 echo ""
-if (( _exit == 124 )); then
-    echo -e "\${YELLOW}[!] $func timed out after ${timeout}s\${NO_COLOR}"
-fi
 echo -e "\${BOLD}\${GREEN}━━━  $func finished  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${NO_COLOR}"
 echo -e "    Loot: $loot"
 echo -e "\${CYAN}  Window stays open — close with: prefix+& or exit\${NO_COLOR}"
