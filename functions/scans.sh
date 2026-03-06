@@ -266,6 +266,7 @@ reg() {
             -oN "$scan_dir/top_1k" \
             -oX "$scan_dir/raw/top_1k.xml" > /dev/null 2>&1
     ) &
+    local _scan1_pid=$!
 
     (
         echo -e "${BLUE}[+] Running comprehensive scan${NO_COLOR}"
@@ -277,8 +278,10 @@ reg() {
             -oX "$scan_dir/raw/full_scan.xml" \
             -oN "$scan_dir/raw/full_scan" > /dev/null 2>&1
     ) &
+    local _scan2_pid=$!
 
-    wait
+    # Wait only on the scan jobs — not the progress timer
+    wait "$_scan1_pid" "$_scan2_pid"
 
     # Kill progress loop
     kill "$_progress_pid" 2>/dev/null || true
@@ -348,6 +351,7 @@ aggr() {
             "$IP" \
             -oN "$IP/autoenum/aggr_scan/top_1k" > /dev/null 2>&1
     ) &
+    local _aggr1_pid=$!
 
     (
         tput setaf 6; echo "Starting aggressive scan..."; tput sgr0
@@ -367,7 +371,7 @@ aggr() {
 
         # Try XML parsing first, fall back to text if it fails
         if searchsploit -j --nmap "$IP/autoenum/aggr_scan/raw/xml_out" > "$loot/exploits/aggr_searchsploit_nmap.json" 2>/dev/null; then
-            searchsploit --nmap "$IP/autoenum/aggr_scan/raw/xml_out" | tee "$loot/exploits/aggr_searchsploit_nmap"
+            searchsploit --nmap "$IP/autoenum/aggr_scan/raw/xml_out" > "$loot/exploits/aggr_searchsploit_nmap"
         else
             echo -e "${RED}[-] XML parsing failed. Falling back to text-based exploit matching.${NO_COLOR}"
             grep -Eo "([0-9]{1,5}/tcp|udp).*open" "$IP/autoenum/aggr_scan/raw/full_scan" | \
@@ -376,6 +380,7 @@ aggr() {
             done
         fi
     ) &
+    local _aggr2_pid=$!
 
     # Extract open ports and services
     (
@@ -393,6 +398,7 @@ aggr() {
         # Script output
         sed -n '/PORT/,/exact/p' "$IP/autoenum/aggr_scan/raw/full_scan" | sed '$d' > "$IP/autoenum/aggr_scan/ports_and_services/script_output"
     ) &
+    local _extract1_pid=$!
 
     # Service-specific processing
     (
@@ -409,8 +415,10 @@ aggr() {
             grep "$service" "$IP/autoenum/aggr_scan/ports_and_services/services_running" | sort -u > "$loot/raw/${service}_found"
         done
     ) &
+    local _extract2_pid=$!
 
-    wait
+    # Wait only on the scan/extract jobs — not the progress timer
+    wait "$_aggr1_pid" "$_aggr2_pid" "$_extract1_pid" "$_extract2_pid"
 
     # Kill progress loop
     kill "$_progress_pid" 2>/dev/null || true
