@@ -10,6 +10,8 @@ set -euo pipefail
 # If not already inside tmux, re-exec into a new named session so secondary
 # scans can open their own windows that the user can switch between.
 if [[ -z "${TMUX:-}" ]]; then
+    # Kill any leftover autoenum session to avoid "duplicate session" failure
+    tmux kill-session -t autoenum 2>/dev/null || true
     exec tmux new-session -s autoenum "$0" "$@"
 fi
 export AUTOENUM_SESSION
