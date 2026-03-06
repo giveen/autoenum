@@ -323,7 +323,127 @@ ldap_enum() {
 }
 
 dns_enum() {
-    echo -e "${YELLOW}[+] Work in progress - DNS enumeration not yet implemented${NO_COLOR}"
+    local timeout="${1:-300}"
+    local dry_run="${2:-}"
+
+    if [[ "$dry_run" == "--dry-run" ]]; then
+        echo -e "${YELLOW}[+] Would run dns_enum on $IP (port 53)${NO_COLOR}"
+        return 0
+    fi
+
+    echo -e "${GREEN}[+] Starting DNS enumeration...${NO_COLOR}"
+    mkdir -p "$loot/dns"
+
+    # === Resolve domain name via reverse lookup ===
+    local domain="" base_domain=""
+    domain=$(dig -x "$IP" +short 2>/dev/null | sed 's/\.$//' | head -1)
+    if [[ -n "$domain" ]]; then
+        echo -e "${GREEN}[+] Reverse lookup: $IP → $domain${NO_COLOR}"
+        echo "$domain" > "$loot/dns/hostname"
+        # Strip first label to get base domain: dc01.corp.local → corp.local
+        if [[ "$domain" =~ \. ]]; then
+            base_domain="${domain#*.}"
+        fi
+        [[ -n "$base_domain" ]] && echo "$base_domain" > "$loot/dns/base_domain"
+    else
+        echo -e "${YELLOW}[-] No reverse DNS record found — running IP-only recon${NO_COLOR}"
+    fi
+
+    # === Nmap DNS scripts ===
+    (
+        echo -e "${YELLOW}[+] Running Nmap DNS scripts${NO_COLOR}"
+        timeout "$timeout" nmap -p 53 -sV \
+            --script "dns-nsid,dns-service-discovery,dns-recursion,dns-zone-transfer" \
+            "$IP" | tee "$loot/dns/nmap_dns" 2>/dev/null || {
+            echo -e "${RED}[-] Nmap DNS scripts failed${NO_COLOR}"
+        }
+        echo "nmap -p 53 -sV --script dns-nsid,dns-service-discovery,dns-recursion,dns-zone-transfer $IP" >> "$loot/dns/cmds_run"
+    ) &
+
+    # === dnsrecon standard sweep ===
+    (
+        echo -e "${YELLOW}[+] Running dnsrecon${NO_COLOR}"
+        if [[ -n "$base_domain" ]]; then
+            timeout "$timeout" dnsrecon -d "$base_domain" -n "$IP" 2>/dev/null \
+                | tee "$loot/dns/dnsrecon" 2>/dev/null || {
+                echo -e "${RED}[-] dnsrecon failed${NO_COLOR}"
+            }
+            echo "dnsrecon -d $base_domain -n $IP" >> "$loot/dns/cmds_run"
+        else
+            # No domain — do reverse range sweep of the /24
+            local range="${IP%.*}.0/24"
+            timeout "$timeout" dnsrecon -r "$range" -n "$IP" 2>/dev/null \
+                | tee "$loot/dns/dnsrecon" 2>/dev/null || {
+                echo -e "${RED}[-] dnsrecon reverse sweep failed${NO_COLOR}"
+            }
+            echo "dnsrecon -r $range -n $IP" >> "$loot/dns/cmds_run"
+        fi
+    ) &
+
+    wait
+
+    # === Zone transfer attempts (need a domain) ===
+    if [[ -n "$base_domain" ]]; then
+        echo -e "${YELLOW}[+] Attempting zone transfer for $base_domain${NO_COLOR}"
+        timeout 30 dig axfr "@$IP" "$base_domain" | tee "$loot/dns/zone_transfer" 2>/dev/null || true
+        echo "dig axfr @$IP $base_domain" >> "$loot/dns/cmds_run"
+
+        # Also try the full hostname's domain if different
+        if [[ -n "$domain" && "$domain" != "$base_domain" ]]; then
+            echo -e "${YELLOW}[+] Attempting zone transfer for $domain${NO_COLOR}"
+            timeout 30 dig axfr "@$IP" "$domain" | tee -a "$loot/dns/zone_transfer" 2>/dev/null || true
+            echo "dig axfr @$IP $domain" >> "$loot/dns/cmds_run"
+        fi
+    fi
+
+    # === Wordlist bruteforce ===
+    if [[ -n "$base_domain" ]]; then
+        # Use SecLists Jhaddix list if available, else fall back to a smaller default
+        local wordlist=""
+        local seclists_dns="/usr/share/seclists/Discovery/DNS"
+        if [[ -f "$seclists_dns/dns-Jhaddix.txt" ]]; then
+            wordlist="$seclists_dns/dns-Jhaddix.txt"
+            echo -e "${GREEN}[+] Using SecLists wordlist: $wordlist${NO_COLOR}"
+        elif [[ -f "$seclists_dns/subdomains-top1million-5000.txt" ]]; then
+            wordlist="$seclists_dns/subdomains-top1million-5000.txt"
+            echo -e "${YELLOW}[*] Jhaddix list not found, falling back to: $wordlist${NO_COLOR}"
+        else
+            echo -e "${YELLOW}[-] SecLists not installed — skipping wordlist bruteforce${NO_COLOR}"
+            echo "[-] Install with: sudo apt install seclists" >> "$loot/dns/notes"
+        fi
+
+        if [[ -n "$wordlist" ]]; then
+            # dnsenum bruteforce
+            (
+                echo -e "${YELLOW}[+] Running dnsenum subdomain bruteforce${NO_COLOR}"
+                timeout "$timeout" dnsenum --dnsserver "$IP" --enum \
+                    -f "$wordlist" "$base_domain" 2>/dev/null \
+                    | tee "$loot/dns/dnsenum" 2>/dev/null || {
+                    echo -e "${RED}[-] dnsenum failed${NO_COLOR}"
+                }
+                echo "dnsenum --dnsserver $IP --enum -f $wordlist $base_domain" >> "$loot/dns/cmds_run"
+            ) &
+
+            # dnsrecon brute mode
+            (
+                echo -e "${YELLOW}[+] Running dnsrecon subdomain bruteforce${NO_COLOR}"
+                timeout "$timeout" dnsrecon -d "$base_domain" -n "$IP" \
+                    -t brt -D "$wordlist" 2>/dev/null \
+                    | tee "$loot/dns/dnsrecon_brute" 2>/dev/null || {
+                    echo -e "${RED}[-] dnsrecon brute failed${NO_COLOR}"
+                }
+                echo "dnsrecon -d $base_domain -n $IP -t brt -D $wordlist" >> "$loot/dns/cmds_run"
+            ) &
+
+            wait
+        fi
+    fi
+
+    # Clean up empty output files
+    find "$loot/dns" -type f ! -name "cmds_run" ! -name "notes" -empty -delete 2>/dev/null
+
+    rm -f "$loot/raw/dns_found"
+    echo -e "${GREEN}[+] DNS enum complete!${NO_COLOR}"
 }
 
 ftp_enum() {
