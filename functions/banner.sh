@@ -24,7 +24,7 @@ banner() {
     # Author credits
     echo -e "${BOLD}${CYAN}Author: giveen${NO_COLOR} (You)"
     echo -e "${BOLD}${BLUE}Original Author: Grimmie${NO_COLOR}"
-    echo -e "${BOLD}${CYAN}Version: 3.0.1${NO_COLOR}"
+    echo -e "${BOLD}${CYAN}Version: ${VERSION:-unknown}${NO_COLOR}"
 
     # Final pause
     sleep 1.025

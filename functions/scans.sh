@@ -28,16 +28,16 @@ OS_guess() {
 
     # Simple TTL-based detection
     if [[ "$ttl" =~ ^(127|128)$ ]]; then
-        echo -e "${GREEN}[+] This machine is probably running Windows (TTL: $ttl)${NC}"
+        echo -e "${GREEN}[+] This machine is probably running Windows (TTL: $ttl)${NO_COLOR}"
     elif [[ "$ttl" =~ ^(255|254)$ ]]; then
-        echo -e "${GREEN}[+] This machine is probably running Cisco/Solaris/OpenBSD (TTL: $ttl)${NC}"
+        echo -e "${GREEN}[+] This machine is probably running Cisco/Solaris/OpenBSD (TTL: $ttl)${NO_COLOR}"
     elif [[ "$ttl" =~ ^(63|64)$ ]]; then
-        echo -e "${GREEN}[+] This machine is probably running Linux (TTL: $ttl)${NC}"
+        echo -e "${GREEN}[+] This machine is probably running Linux (TTL: $ttl)${NO_COLOR}"
     else
         if [[ -n "$ttl" ]]; then
-            echo -e "${YELLOW}[-] Unknown TTL value: $ttl${NC}"
+            echo -e "${YELLOW}[-] Unknown TTL value: $ttl${NO_COLOR}"
         else
-            echo -e "${RED}[-] Could not determine OS (no response)${NC}"
+            echo -e "${RED}[-] Could not determine OS (no response)${NO_COLOR}"
         fi
     fi
 }
@@ -70,7 +70,7 @@ enum_goto() {
         "linux:linux_enum"
     )
 
-    echo -e "${CYAN}[+] Starting service enumeration with parallel execution (timeout: $timeout)${NC}"
+    echo -e "${CYAN}[+] Starting service enumeration with parallel execution (timeout: $timeout)${NO_COLOR}"
     
     # Process regular services with parallel job control
     for service in "${services[@]}"; do
@@ -84,8 +84,10 @@ enum_goto() {
                 ((running--))
             done
             
-            echo -e "${GREEN}[+] Found $file - launching $func${NC}"
-            ( timeout "$timeout" "$func" || echo -e "${RED}[-] $func timed out${NC}" ) &
+            echo -e "${GREEN}[+] Found $file - launching $func${NO_COLOR}"
+            # timeout cannot wrap shell functions directly; use bash -c to export and call them
+            ( timeout "$timeout" bash -c "$(declare -f "$func"); IP='$IP' loot='$loot' $func" \
+                || echo -e "${RED}[-] $func timed out${NO_COLOR}" ) &
             ((running++))
         fi
     done
@@ -99,15 +101,16 @@ enum_goto() {
         local func="${service##*:}"
         
         if [[ -s "$loot/raw/${file}_found" ]]; then
-            echo -e "${YELLOW}[+] Running OS-specific enumeration: $func${NC}"
-            timeout "$timeout" "$func" || echo -e "${RED}[-] $func failed${NC}"
+            echo -e "${YELLOW}[+] Running OS-specific enumeration: $func${NO_COLOR}"
+            timeout "$timeout" bash -c "$(declare -f "$func"); IP='$IP' loot='$loot' $func" \
+                || echo -e "${RED}[-] $func failed${NO_COLOR}"
         fi
     done
 
     # Cleanup empty files
     find "$loot/raw" -type f -empty -delete 2>/dev/null
     
-    echo -e "${CYAN}[+] Enumeration complete${NC}"
+    echo -e "${CYAN}[+] Enumeration complete${NO_COLOR}"
 }
 
 # === SCAN FUNCTIONS ===
@@ -125,32 +128,31 @@ reg() {
     (
         for i in {1..60}; do
             sleep 10
-            echo -e "${CYAN}[+] Scan progress: $((i * 10)) seconds elapsed (reg scan)${NC}"
+            echo -e "${CYAN}[+] Scan progress: $((i * 10)) seconds elapsed (reg scan)${NO_COLOR}"
         done
     ) &
+    local _progress_pid=$!
 
     # Run scans in parallel
     (
-        echo -e "${BLUE}[+] Scanning top 1000 ports${NC}"
+        echo -e "${BLUE}[+] Scanning top 1000 ports${NO_COLOR}"
         nmap --top-ports 1000 -sV \
             --min-rate 500 \
             --max-retries 1 \
-            --max-parallelism 100 \
-            --timeout 5 \
-            --max-rtt-timeout 60 \
+            --host-timeout 300s \
+            --max-rtt-timeout 1000ms \
             "$IP" \
             -oN "$scan_dir/top_1k" \
             -oX "$scan_dir/raw/top_1k.xml"
     ) &
 
     (
-        echo -e "${BLUE}[+] Running comprehensive scan${NC}"
+        echo -e "${BLUE}[+] Running comprehensive scan${NO_COLOR}"
         nmap -p- -sV -O -T4 -Pn -v "$IP" \
             --min-rate 500 \
             --max-retries 1 \
-            --max-parallelism 100 \
-            --timeout 5 \
-            --max-rtt-timeout 60 \
+            --host-timeout 300s \
+            --max-rtt-timeout 1000ms \
             -oX "$scan_dir/raw/full_scan.xml" \
             -oN "$scan_dir/raw/full_scan"
     ) &
@@ -158,7 +160,7 @@ reg() {
     wait
 
     # Kill progress loop
-    kill %1 2>/dev/null || true
+    kill "$_progress_pid" 2>/dev/null || true
 
     # Process scan results
     process_scans() {
@@ -205,9 +207,10 @@ aggr() {
     (
         for i in {1..60}; do
             sleep 10
-            echo -e "${CYAN}[+] Scan progress: $((i * 10)) seconds elapsed (aggr scan, timeout: $timeout)${NC}"
+            echo -e "${CYAN}[+] Scan progress: $((i * 10)) seconds elapsed (aggr scan, timeout: $timeout)${NO_COLOR}"
         done
     ) &
+    local _progress_pid=$!
 
     # Run scans in parallel
     (
@@ -215,11 +218,10 @@ aggr() {
         nmap --top-ports 1000 -sV \
             --min-rate 500 \
             --max-retries 1 \
-            --max-parallelism 100 \
-            --timeout 5 \
-            --max-rtt-timeout "$timeout" \
+            --host-timeout "${timeout}s" \
+            --max-rtt-timeout 1000ms \
             "$IP" \
-            -oN "$IP/autoenum/aggr_scan/top_1k" &
+            -oN "$IP/autoenum/aggr_scan/top_1k"
     ) &
 
     (
@@ -227,9 +229,8 @@ aggr() {
         nmap -n -A -T4 -p- \
             --min-rate 500 \
             --max-retries 1 \
-            --max-parallelism 100 \
-            --timeout 5 \
-            --max-rtt-timeout "$timeout" \
+            --host-timeout "${timeout}s" \
+            --max-rtt-timeout 1000ms \
             -Pn -v "$IP" \
             -oX "$IP/autoenum/aggr_scan/raw/xml_out" \
             -oN "$IP/autoenum/aggr_scan/raw/full_scan"
@@ -243,7 +244,7 @@ aggr() {
         if searchsploit -j --nmap "$IP/autoenum/aggr_scan/raw/xml_out" > "$loot/exploits/aggr_searchsploit_nmap.json" 2>/dev/null; then
             searchsploit --nmap "$IP/autoenum/aggr_scan/raw/xml_out" | tee "$loot/exploits/aggr_searchsploit_nmap"
         else
-            echo -e "${RED}[-] XML parsing failed. Falling back to text-based exploit matching.${NC}"
+            echo -e "${RED}[-] XML parsing failed. Falling back to text-based exploit matching.${NO_COLOR}"
             grep -Eo "([0-9]{1,5}/tcp|udp).*open" "$IP/autoenum/aggr_scan/raw/full_scan" | \
             while read -r service; do
                 searchsploit "$(echo "$service" | awk '{print $3}')" | grep -v "No Results" >> "$loot/exploits/aggr_searchsploit_nmap"
@@ -253,7 +254,12 @@ aggr() {
 
     # Extract open ports and services
     (
-        sleep 5  # Wait for full_scan to populate
+        # Poll until full_scan exists and has content rather than using a fixed sleep
+        local _waited=0
+        while [[ ! -s "$IP/autoenum/aggr_scan/raw/full_scan" ]] && (( _waited < 60 )); do
+            sleep 1
+            (( _waited++ ))
+        done
         awk '/open/ && !/Discovered/ && !/\|/' "$IP/autoenum/aggr_scan/raw/full_scan" > "$IP/autoenum/aggr_scan/ports_and_services/services_running"
 
         # OS detection
@@ -265,7 +271,12 @@ aggr() {
 
     # Service-specific processing
     (
-        sleep 5  # Ensure services_running exists
+        # Poll until services_running exists
+        local _waited=0
+        while [[ ! -s "$IP/autoenum/aggr_scan/ports_and_services/services_running" ]] && (( _waited < 90 )); do
+            sleep 1
+            (( _waited++ ))
+        done
         awk -F'/' '/http/ {print $1}' "$IP/autoenum/aggr_scan/ports_and_services/services_running" | sort -u > "$loot/raw/http_found"
 
         services=("smb" "snmp" "ftp" "ldap" "smtp" "imap" "pop3" "oracle" "redis")
@@ -277,7 +288,7 @@ aggr() {
     wait
 
     # Kill progress loop
-    kill %1 2>/dev/null || true
+    kill "$_progress_pid" 2>/dev/null || true
 
     enum_goto "$timeout"
 }
@@ -295,33 +306,34 @@ top_1k() {
     (
         for i in {1..60}; do
             sleep 10
-            echo -e "${CYAN}[+] Scan progress: $((i * 10)) seconds elapsed (top 1k)${NC}"
+            echo -e "${CYAN}[+] Scan progress: $((i * 10)) seconds elapsed (top 1k)${NO_COLOR}"
         done
     ) &
+    local _progress_pid=$!
 
     # 1. Run Nmap scans
-    echo -e "${YELLOW}[+] Scanning top 1k ports${NC}"
+    echo -e "${YELLOW}[+] Scanning top 1k ports${NO_COLOR}"
     nmap --top-ports 1000 -sV \
         --min-rate 500 \
         --max-retries 1 \
-        --max-parallelism 100 \
-        --timeout 5 \
-        --max-rtt-timeout 60 \
+        --host-timeout 300s \
+        --max-rtt-timeout 1000ms \
         -oX "$t1k/raw/xml_out" \
         -oN "$t1k/ports_and_services/services" "$IP"
 
     # 2. Validate XML before SearchSploit
     if [[ -s "$t1k/raw/xml_out" ]] && grep -q "<nmaprun" "$t1k/raw/xml_out"; then
-        echo -e "${YELLOW}[+] Running SearchSploit (XML mode)${NC}"
-        searchsploit -v --xml "$t1k/raw/xml_out" > "$loot/exploits/top_1k_searchsploit_nmap.json" 2>&1
-        
+        echo -e "${YELLOW}[+] Running SearchSploit (XML mode)${NO_COLOR}"
+        searchsploit -j --nmap "$t1k/raw/xml_out" > "$loot/exploits/top_1k_searchsploit_nmap.json" 2>&1
+        searchsploit --nmap "$t1k/raw/xml_out" > "$loot/exploits/top_1k_searchsploit_nmap"
+
         # Fallback if XML parsing fails
         if grep -q "parser error" "$loot/exploits/top_1k_searchsploit_nmap.json"; then
-            echo -e "${RED}[-] XML parsing failed, switching to text mode${NC}"
+            echo -e "${RED}[-] XML parsing failed, switching to text mode${NO_COLOR}"
             searchsploit --nmap "$t1k/ports_and_services/services" > "$loot/exploits/top_1k_searchsploit_nmap"
         fi
     else
-        echo -e "${RED}[-] Invalid XML, using text output${NC}"
+        echo -e "${RED}[-] Invalid XML, using text output${NO_COLOR}"
         searchsploit --nmap "$t1k/ports_and_services/services" > "$loot/exploits/top_1k_searchsploit_nmap"
     fi
 
@@ -334,7 +346,7 @@ top_1k() {
     done
 
     # Kill progress loop
-    kill %1 2>/dev/null || true
+    kill "$_progress_pid" 2>/dev/null || true
 
     enum_goto
 }
@@ -352,45 +364,43 @@ top_10k() {
     (
         for i in {1..60}; do
             sleep 10
-            echo -e "${CYAN}[+] Scan progress: $((i * 10)) seconds elapsed (top 10k)${NC}"
+            echo -e "${CYAN}[+] Scan progress: $((i * 10)) seconds elapsed (top 10k)${NO_COLOR}"
         done
     ) &
+    local _progress_pid=$!
 
-    echo -e "${YELLOW}[+] Starting top 10k port scan with parallel execution${NC}"
+    echo -e "${YELLOW}[+] Starting top 10k port scan with parallel execution${NO_COLOR}"
 
     # Run scans in parallel with performance optimizations
     (
-        echo -e "${BLUE}[+] Running service detection scan (min-rate 500)${NC}"
+        echo -e "${BLUE}[+] Running service detection scan (min-rate 500)${NO_COLOR}"
         nmap --top-ports 10000 -sV \
             --min-rate 500 \
             --max-retries 1 \
-            --max-parallelism 100 \
-            --timeout 5 \
-            --max-rtt-timeout 60 \
+            --host-timeout 300s \
+            --max-rtt-timeout 1000ms \
             "$IP" \
             -oN "$scan_dir/raw/services"
     ) &
 
     (
-        echo -e "${BLUE}[+] Running script scan (max-parallelism 100)${NC}"
+        echo -e "${BLUE}[+] Running script scan${NO_COLOR}"
         nmap --top-ports 10000 -sC \
             --min-rate 500 \
             --max-retries 1 \
-            --max-parallelism 100 \
-            --timeout 5 \
-            --max-rtt-timeout 60 \
+            --host-timeout 300s \
+            --max-rtt-timeout 1000ms \
             "$IP" \
             -oN "$scan_dir/raw/scripts"
     ) &
 
     (
-        echo -e "${BLUE}[+] Generating XML output (min-rate 250)${NC}"
+        echo -e "${BLUE}[+] Generating XML output (min-rate 250)${NO_COLOR}"
         nmap --top-ports 10000 -sV \
             --min-rate 250 \
             --max-retries 1 \
-            --max-parallelism 100 \
-            --timeout 5 \
-            --max-rtt-timeout 60 \
+            --host-timeout 300s \
+            --max-rtt-timeout 1000ms \
             "$IP" \
             -oX "$scan_dir/raw/xml_out"
     ) &
@@ -398,17 +408,17 @@ top_10k() {
     wait
 
     # Kill progress loop
-    kill %1 2>/dev/null || true
+    kill "$_progress_pid" 2>/dev/null || true
 
     # Process results
     process_results() {
         # SearchSploit processing
         if [[ -s "$scan_dir/raw/xml_out" ]]; then
-            echo -e "${CYAN}[+] Running SearchSploit analysis${NC}"
+            echo -e "${CYAN}[+] Running SearchSploit analysis${NO_COLOR}"
             searchsploit -j --nmap "$scan_dir/raw/xml_out" > "$loot/exploits/top_10k_searchsploit_nmap.json"
             searchsploit --nmap "$scan_dir/raw/xml_out" > "$loot/exploits/top_10k_searchsploit_nmap"
         else
-            echo -e "${RED}[-] XML output missing or empty - skipping SearchSploit${NC}"
+            echo -e "${RED}[-] XML output missing or empty - skipping SearchSploit${NO_COLOR}"
         fi
 
         # Extract open ports
@@ -432,7 +442,7 @@ top_10k() {
 
         # Cleanup empty files
         find "$loot/raw" -type f -empty -delete 2>/dev/null
-        echo -e "${GREEN}[+] Scan results processed and saved${NC}"
+        echo -e "${GREEN}[+] Scan results processed and saved${NO_COLOR}"
     }
 
     process_results
@@ -449,15 +459,14 @@ udp() {
     mkdir -p "$IP/autoenum/udp/"{raw,ports_and_services} "$loot/raw"
     udp_dir="$IP/autoenum/udp"
     
-    echo -e "${YELLOW}[+] Starting UDP scan (Top 100 ports)${NC}"
+    echo -e "${YELLOW}[+] Starting UDP scan (Top 100 ports)${NO_COLOR}"
     
     # Scan top 100 UDP ports with version detection
     nmap -sU -sV --top-ports 100 \
         --min-rate 500 \
         --max-retries 1 \
-        --max-parallelism 100 \
-        --timeout 5 \
-        --max-rtt-timeout 60 \
+        --host-timeout 300s \
+        --max-rtt-timeout 1000ms \
         -T4 "$IP" \
         -oN "$udp_dir/scan" \
         -oX "$udp_dir/raw/xml_out" 2>&1 | tee -a "$udp_dir/scan"
@@ -467,7 +476,7 @@ udp() {
     
     # Service-specific processing
     if [[ -s "$udp_dir/ports_and_services/open_ports" ]]; then
-        echo -e "${GREEN}[+] Found open UDP ports: $(tr '\n' ' ' < "$udp_dir/ports_and_services/open_ports")${NC}"
+        echo -e "${GREEN}[+] Found open UDP ports: $(tr '\n' ' ' < "$udp_dir/ports_and_services/open_ports")${NO_COLOR}"
         
         # Common UDP services check
         services=("snmp" "ntp" "dns" "dhcp" "tftp")
@@ -477,15 +486,15 @@ udp() {
         
         # Special checks for SNMP
         if grep -q "161/udp" "$udp_dir/ports_and_services/open_ports"; then
-            echo -e "${YELLOW}[+] Running SNMP checks...${NC}"
+            echo -e "${YELLOW}[+] Running SNMP checks...${NO_COLOR}"
             snmp-check "$IP" -c public >> "$udp_dir/snmp_check" 2>&1
             onesixtyone "$IP" >> "$udp_dir/onesixtyone" 2>&1
         fi
     else
-        echo -e "${RED}[-] No open UDP ports found${NC}"
+        echo -e "${RED}[-] No open UDP ports found${NO_COLOR}"
     fi
     
-    echo -e "${GREEN}[+] UDP scan completed${NC}"
+    echo -e "${GREEN}[+] UDP scan completed${NO_COLOR}"
 }
 
 vuln() {
@@ -495,32 +504,30 @@ vuln() {
 
     # Check if vulscan is already installed
     if [[ ! -d "$HOME/.local/share/nmap/scripts/vulscan" ]]; then
-        echo -e "${YELLOW}[+] Installing vulscan in user space...${NC}"
+        echo -e "${YELLOW}[+] Installing vulscan in user space...${NO_COLOR}"
         mkdir -p "$HOME/.local/share/nmap/scripts"
         git clone https://github.com/scipag/vulscan.git "$HOME/.local/share/nmap/scripts/vulscan" 2>/dev/null || {
-            echo -e "${RED}[-] Failed to clone vulscan repository${NC}"
+            echo -e "${RED}[-] Failed to clone vulscan repository${NO_COLOR}"
             return 1
         }
     fi
 
     # First scan: vulscan
     if [[ -d "$HOME/.local/share/nmap/scripts/vulscan" ]]; then
-        echo -e "${YELLOW}[+] Running vulscan...${NC}"
+        echo -e "${YELLOW}[+] Running vulscan...${NO_COLOR}"
         nmap -sV --script="$HOME/.local/share/nmap/scripts/vulscan/vulscan.nse" \
-            --max-parallelism 50 \
-            --timeout 3 \
+            --host-timeout 300s \
             "$IP" | tee -a "$vulns/vulscan" || {
-            echo -e "${RED}[-] vulscan failed${NC}"
+            echo -e "${RED}[-] vulscan failed${NO_COLOR}"
         }
     fi
 
     # Second scan: standard Nmap vuln scripts
-    echo -e "${YELLOW}[+] Running Nmap vuln scripts...${NC}"
+    echo -e "${YELLOW}[+] Running Nmap vuln scripts...${NO_COLOR}"
     nmap -Pn --script vuln \
-        --max-parallelism 50 \
-        --timeout 3 \
+        --host-timeout 300s \
         "$IP" | tee -a "$vulns/vuln" || {
-        echo -e "${RED}[-] Nmap vuln scan failed${NC}"
+        echo -e "${RED}[-] Nmap vuln scan failed${NO_COLOR}"
     }
 
     cd "$cwd" || return

@@ -22,23 +22,23 @@ redis_enum() {
     local dry_run="${2:-}"
 
     if [[ "$dry_run" == "--dry-run" ]]; then
-        echo -e "${YELLOW}[+] Would run redis_enum on $IP:6379${NC}"
+        echo -e "${YELLOW}[+] Would run redis_enum on $IP:6379${NO_COLOR}"
         return 0
     fi
 
-    echo -e "${GREEN}[+] Starting Redis enumeration...${NC}"
+    echo -e "${GREEN}[+] Starting Redis enumeration...${NO_COLOR}"
     mkdir -p "$loot/redis"
 
     # Run with timeout
-    timeout "$timeout" nmap -sV -p 6379 --min-rate 500 --max-parallelism 100 \
-        --timeout 5 \
+    timeout "$timeout" nmap -sV -p 6379 --min-rate 500 \
+        --host-timeout 60s \
         "$IP" --script redis-info \
         | tee -a "$loot/redis/redis_info" 2>/dev/null || {
-        echo -e "${RED}[-] Redis scan failed${NC}"
+        echo -e "${RED}[-] Redis scan failed${NO_COLOR}"
     }
 
     echo "msf> use auxiliary/scanner/redis/redis_server" >> "$loot/redis/manual_cmds"
-    echo -e "${GREEN}[+] Redis enum complete!${NC}"
+    echo -e "${GREEN}[+] Redis enum complete!${NO_COLOR}"
 }
 
 snmp_enum() {
@@ -46,45 +46,45 @@ snmp_enum() {
     local dry_run="${2:-}"
 
     if [[ "$dry_run" == "--dry-run" ]]; then
-        echo -e "${YELLOW}[+] Would run snmp_enum on $IP${NC}"
+        echo -e "${YELLOW}[+] Would run snmp_enum on $IP${NO_COLOR}"
         return 0
     fi
 
-    echo -e "${GREEN}[+] Starting SNMP enumeration...${NC}"
+    echo -e "${GREEN}[+] Starting SNMP enumeration...${NO_COLOR}"
     mkdir -p "$loot/snmp"
 
     # Run onesixtyone with timeout
     timeout "$timeout" onesixtyone -c /usr/share/doc/onesixtyone/dict.txt "$IP" \
         | tee -a "$loot/snmp/snmpenum" 2>/dev/null || {
-        echo -e "${RED}[-] onesixtyone failed${NC}"
+        echo -e "${RED}[-] onesixtyone failed${NO_COLOR}"
     }
 
     # Run snmp-check
     timeout "$timeout" snmp-check -c public -v 1 -d "$IP" \
         | tee -a "$loot/snmp/snmpcheck" 2>/dev/null || {
-        echo -e "${RED}[-] snmp-check failed${NC}"
+        echo -e "${RED}[-] snmp-check failed${NO_COLOR}"
     }
 
     # Check for timeout
-    if grep -q "SNMP request timeout" "$loot/snmp/snmpcheck"; then
-        rm "$loot/snmp/snmpcheck"
+    if [[ -f "$loot/snmp/snmpcheck" ]] && grep -q "SNMP request timeout" "$loot/snmp/snmpcheck"; then
+        rm -f "$loot/snmp/snmpcheck"
         timeout "$timeout" snmpwalk -c public -v2c "$IP" \
             | tee -a "$loot/snmp/uderstuff" 2>/dev/null || {
-            echo -e "${RED}[-] snmpwalk failed${NC}"
+            echo -e "${RED}[-] snmpwalk failed${NO_COLOR}"
         }
         if grep -q "timeout" "$loot/snmp/uderstuff"; then
-            rm "$loot/snmp/uderstuff"
+            rm -f "$loot/snmp/uderstuff"
         else
             mv "$loot/snmp/uderstuff" "$loot/snmp/snmpenum"
         fi
     else
-        mv "$loot/snmp/snmpcheck" "$loot/snmp/snmpenum"
+        [[ -f "$loot/snmp/snmpcheck" ]] && mv "$loot/snmp/snmpcheck" "$loot/snmp/snmpenum"
     fi
 
     echo "onesixtyone -c /usr/share/doc/onesixtyone/dict.txt $IP" >> "$loot/snmp/cmds_run"
     echo "snmp-check -c public $IP" >> "$loot/snmp/cmds_run"
 
-    echo -e "${GREEN}[+] SNMP enum complete!${NC}"
+    echo -e "${GREEN}[+] SNMP enum complete!${NO_COLOR}"
 }
 
 rpc_enum() {
@@ -92,33 +92,33 @@ rpc_enum() {
     local dry_run="${2:-}"
 
     if [[ "$dry_run" == "--dry-run" ]]; then
-        echo -e "${YELLOW}[+] Would run rpc_enum on $IP${NC}"
+        echo -e "${YELLOW}[+] Would run rpc_enum on $IP${NO_COLOR}"
         return 0
     fi
 
-    echo -e "${GREEN}[+] Starting RPC enumeration...${NC}"
+    echo -e "${GREEN}[+] Starting RPC enumeration...${NO_COLOR}"
     mkdir -p "$loot/rpc"
 
     # Get port from file
     if [[ ! -s "$loot/raw/rpc_found" ]]; then
-        echo -e "${RED}[-] No RPC ports found${NC}"
+        echo -e "${RED}[-] No RPC ports found${NO_COLOR}"
         return 0
     fi
 
-    local port=$(awk '/rpc/ {print $1}' "$loot/raw/rpc_found" | cut -d'/' -f1)
+    local port
+    port=$(awk '/rpc/ {print $1}' "$loot/raw/rpc_found" | cut -d'/' -f1)
 
-    # Run nmap
+    # Run nmap rpcinfo script
     timeout "$timeout" nmap -sV -p "$port" --script=rpcinfo \
-        --min-rate 500 --max-parallelism 100 \
-        --timeout 5 "$IP" \
+        --min-rate 500 --host-timeout 60s "$IP" \
         | tee -a "$loot/rpc/ports" 2>/dev/null || {
-        echo -e "${RED}[-] nmap rpcinfo failed${NC}"
+        echo -e "${RED}[-] nmap rpcinfo failed${NO_COLOR}"
     }
 
-    # Run rpcbind
-    timeout "$timeout" rpcbind -p "$IP" \
+    # Query RPC services (rpcinfo, not rpcbind which is a daemon)
+    timeout "$timeout" rpcinfo -p "$IP" \
         | tee -a "$loot/rpc/versions" 2>/dev/null || {
-        echo -e "${RED}[-] rpcbind failed${NC}"
+        echo -e "${RED}[-] rpcinfo query failed${NO_COLOR}"
     }
 
     # Check for NFS
@@ -126,8 +126,8 @@ rpc_enum() {
         nfs_enum "$timeout" "$dry_run"
     fi
 
-    rm "$loot/raw/rpc_found"
-    echo -e "${GREEN}[+] RPC enum complete!${NC}"
+    rm -f "$loot/raw/rpc_found"
+    echo -e "${GREEN}[+] RPC enum complete!${NO_COLOR}"
 }
 
 nfs_enum() {
@@ -135,29 +135,30 @@ nfs_enum() {
     local dry_run="${2:-}"
 
     if [[ "$dry_run" == "--dry-run" ]]; then
-        echo -e "${YELLOW}[+] Would run nfs_enum on $IP${NC}"
+        echo -e "${YELLOW}[+] Would run nfs_enum on $IP${NO_COLOR}"
         return 0
     fi
 
-    echo -e "${GREEN}[+] Starting NFS enumeration...${NC}"
+    echo -e "${GREEN}[+] Starting NFS enumeration...${NO_COLOR}"
     mkdir -p "$loot/nfs"
 
     # Run nmap
     timeout "$timeout" nmap -p 111 --script nfs* "$IP" \
         | tee "$loot/nfs/scripts" 2>/dev/null || {
-        echo -e "${RED}[-] nmap nfs failed${NC}"
+        echo -e "${RED}[-] nmap nfs failed${NO_COLOR}"
     }
 
     # Check for share
-    local share=$(awk '/|_ / {print $2}' "$loot/nfs/scripts" | head -1)
+    local share
+    share=$(awk '/\|_ / {print $2}' "$loot/nfs/scripts" | head -1)
     if [[ -n "$share" ]]; then
         mkdir -p "$loot/nfs/mount"
-        timeout "$timeout" mount -o nolock "$IP:$share" "$loot/nfs/mount" 2>/dev/null || {
-            echo -e "${RED}[-] Mount failed${NC}"
+        timeout "$timeout" sudo mount -o nolock "$IP:$share" "$loot/nfs/mount" 2>/dev/null || {
+            echo -e "${RED}[-] Mount failed (try running autoenum as root)${NO_COLOR}"
         }
     fi
 
-    echo -e "${GREEN}[+] NFS enum complete!${NC}"
+    echo -e "${GREEN}[+] NFS enum complete!${NO_COLOR}"
 }
 
 pop3_enum() {
@@ -165,26 +166,26 @@ pop3_enum() {
     local dry_run="${2:-}"
 
     if [[ "$dry_run" == "--dry-run" ]]; then
-        echo -e "${YELLOW}[+] Would run pop3_enum on $IP${NC}"
+        echo -e "${YELLOW}[+] Would run pop3_enum on $IP${NO_COLOR}"
         return 0
     fi
 
-    echo -e "${GREEN}[+] Starting POP3 enumeration...${NC}"
+    echo -e "${GREEN}[+] Starting POP3 enumeration...${NO_COLOR}"
     mkdir -p "$loot/pop3"
 
     # Run nmap
     timeout "$timeout" nmap -sV --script pop3-brute "$IP" \
         | tee -a "$loot/pop3/brute" 2>/dev/null || {
-        echo -e "${RED}[-] nmap pop3-brute failed${NC}"
+        echo -e "${RED}[-] nmap pop3-brute failed${NO_COLOR}"
     }
 
     echo "telnet $IP 110" >> "$loot/pop3/manual_cmds"
-    rm "$loot/raw/pop3_found"
-    echo -e "${GREEN}[+] POP3 enum complete!${NC}"
+    rm -f "$loot/raw/pop3_found"
+    echo -e "${GREEN}[+] POP3 enum complete!${NO_COLOR}"
 }
 
 imap_enum() {
-    echo -e "${YELLOW}[+] Work in progress${NC}"
+    echo -e "${YELLOW}[+] Work in progress${NO_COLOR}"
 }
 
 ldap_enum() {
@@ -192,40 +193,40 @@ ldap_enum() {
     local dry_run="${2:-}"
 
     if [[ "$dry_run" == "--dry-run" ]]; then
-        echo -e "${YELLOW}[+] Would run ldap_enum on $IP${NC}"
+        echo -e "${YELLOW}[+] Would run ldap_enum on $IP${NO_COLOR}"
         return 0
     fi
 
-    echo -e "${GREEN}[+] Starting LDAP enumeration...${NC}"
+    echo -e "${GREEN}[+] Starting LDAP enumeration...${NO_COLOR}"
     mkdir -p "$loot/ldap"
 
     # Run Nmap LDAP scripts
     (
-        echo -e "${YELLOW}[+] Running Nmap LDAP scripts${NC}"
+        echo -e "${YELLOW}[+] Running Nmap LDAP scripts${NO_COLOR}"
         timeout "$timeout" nmap -vv -Pn -sV -p 389,636 \
             --script='(ldap* or ssl*) and not (brute or broadcast or dos or external or fuzzer)' \
             "$IP" | tee "$loot/ldap/nmap_ldap_scripts.txt" 2>/dev/null || {
-            echo -e "${RED}[-] Nmap LDAP scripts failed${NC}"
+            echo -e "${RED}[-] Nmap LDAP scripts failed${NO_COLOR}"
         }
         echo "nmap -vv -Pn -sV -p 389,636 --script='(ldap* or ssl*) and not (brute or broadcast or dos or external or fuzzer)' $IP" >> "$loot/ldap/cmds_run"
     ) &
 
     # Run ldapsearch
     (
-        echo -e "${YELLOW}[+] Running ldapsearch for base DN${NC}"
+        echo -e "${YELLOW}[+] Running ldapsearch for base DN${NO_COLOR}"
         timeout "$timeout" ldapsearch -x -H "ldap://$IP:389" -s base namingcontexts 2>/dev/null \
             | tee "$loot/ldap/ldapsearch_base.txt" 2>/dev/null || {
-            echo -e "${RED}[-] ldapsearch base failed${NC}"
+            echo -e "${RED}[-] ldapsearch base failed${NO_COLOR}"
         }
         echo "ldapsearch -x -H ldap://$IP:389 -s base namingcontexts" >> "$loot/ldap/cmds_run"
     ) &
 
     # Run ldapwhoami
     (
-        echo -e "${YELLOW}[+] Checking anonymous binding${NC}"
+        echo -e "${YELLOW}[+] Checking anonymous binding${NO_COLOR}"
         timeout "$timeout" ldapwhoami -x -H "ldap://$IP:389" 2>/dev/null \
             | tee "$loot/ldap/anonymous_bind.txt" 2>/dev/null || {
-            echo -e "${RED}[-] ldapwhoami failed${NC}"
+            echo -e "${RED}[-] ldapwhoami failed${NO_COLOR}"
         }
         echo "ldapwhoami -x -H ldap://$IP:389" >> "$loot/ldap/cmds_run"
     ) &
@@ -234,37 +235,38 @@ ldap_enum() {
 
     # Check for base DN
     if grep -q "namingcontexts" "$loot/ldap/ldapsearch_base.txt"; then
-        local base_dn=$(awk '/namingcontexts/ {print $2}' "$loot/ldap/ldapsearch_base.txt" | head -1)
-        echo -e "${GREEN}[+] Found base DN: $base_dn${NC}"
+        local base_dn
+        base_dn=$(awk '/namingcontexts/ {print $2}' "$loot/ldap/ldapsearch_base.txt" | head -1)
+        echo -e "${GREEN}[+] Found base DN: $base_dn${NO_COLOR}"
 
         # Run detailed enumeration
         (
-            echo -e "${YELLOW}[+] Enumerating LDAP objects${NC}"
+            echo -e "${YELLOW}[+] Enumerating LDAP objects${NO_COLOR}"
             timeout "$timeout" ldapsearch -x -H "ldap://$IP:389" -b "$base_dn" '(objectClass=*)' 2>/dev/null \
                 | tee "$loot/ldap/ldapsearch_full.txt" 2>/dev/null || {
-                echo -e "${RED}[-] ldapsearch full failed${NC}"
+                echo -e "${RED}[-] ldapsearch full failed${NO_COLOR}"
             }
             echo "ldapsearch -x -H ldap://$IP:389 -b '$base_dn' '(objectClass=*)'" >> "$loot/ldap/cmds_run"
         ) &
 
         # Check password policy
         (
-            echo -e "${YELLOW}[+] Checking password policy${NC}"
+            echo -e "${YELLOW}[+] Checking password policy${NO_COLOR}"
             timeout "$timeout" ldapsearch -x -H "ldap://$IP:389" -b "$base_dn" '(objectClass=pwdPolicy)' 2>/dev/null \
                 | tee "$loot/ldap/password_policy.txt" 2>/dev/null || {
-                echo -e "${RED}[-] ldapsearch policy failed${NC}"
+                echo -e "${RED}[-] ldapsearch policy failed${NO_COLOR}"
             }
         ) &
     fi
 
     wait
 
-    [[ -f "$loot/raw/ldap_found" ]] && rm "$loot/raw/ldap_found"
-    echo -e "${GREEN}[+] LDAP enumeration complete!${NC}"
+    [[ -f "$loot/raw/ldap_found" ]] && rm -f "$loot/raw/ldap_found"
+    echo -e "${GREEN}[+] LDAP enumeration complete!${NO_COLOR}"
 }
 
 dns_enum() {
-    echo -e "${YELLOW}[+] Work in progress - DNS enumeration not yet implemented${NC}"
+    echo -e "${YELLOW}[+] Work in progress - DNS enumeration not yet implemented${NO_COLOR}"
 }
 
 ftp_enum() {
@@ -272,16 +274,16 @@ ftp_enum() {
     local dry_run="${2:-}"
 
     if [[ "$dry_run" == "--dry-run" ]]; then
-        echo -e "${YELLOW}[+] Would run ftp_enum on $IP${NC}"
+        echo -e "${YELLOW}[+] Would run ftp_enum on $IP${NO_COLOR}"
         return 0
     fi
 
-    echo -e "${GREEN}[+] Starting FTP enumeration...${NC}"
+    echo -e "${GREEN}[+] Starting FTP enumeration...${NO_COLOR}"
     mkdir -p "$loot/ftp"
 
     # Get ports
     if [[ ! -s "$loot/raw/ftp_found" ]]; then
-        echo -e "${RED}[-] No FTP ports found${NC}"
+        echo -e "${RED}[-] No FTP ports found${NO_COLOR}"
         return 0
     fi
 
@@ -289,14 +291,14 @@ ftp_enum() {
         timeout "$timeout" nmap -sV -Pn -p "$port" \
             --script=ftp-anon,ftp-bounce,ftp-libopie,ftp-proftpd-backdoor,ftp-vsftpd-backdoor,ftp-vuln-cve2010-4221,ftp-syst \
             -v "$IP" | tee -a "$loot/ftp/ftp_scripts" 2>/dev/null || {
-            echo -e "${RED}[-] nmap FTP scan failed on port $port${NC}"
+            echo -e "${RED}[-] nmap FTP scan failed on port $port${NO_COLOR}"
         }
     done < <(awk '{print $1}' "$loot/raw/ftp_found" | cut -d'/' -f1)
 
     echo "nmap -sV -Pn -p $port --script=ftp-anon,ftp-bounce,ftp-libopie,ftp-proftpd-backdoor,ftp-vsftpd-backdoor,ftp-vuln-cve2010-4221,ftp-syst -v $IP" >> "$loot/ftp/cmds_run"
-    rm "$loot/ftp/port_list"
-    rm "$loot/raw/ftp_found"
-    echo -e "${GREEN}[+] FTP enum complete!${NC}"
+    rm -f "$loot/ftp/port_list"
+    rm -f "$loot/raw/ftp_found"
+    echo -e "${GREEN}[+] FTP enum complete!${NO_COLOR}"
 }
 
 smtp_enum() {
@@ -304,37 +306,37 @@ smtp_enum() {
     local dry_run="${2:-}"
 
     if [[ "$dry_run" == "--dry-run" ]]; then
-        echo -e "${YELLOW}[+] Would run smtp_enum on $IP${NC}"
+        echo -e "${YELLOW}[+] Would run smtp_enum on $IP${NO_COLOR}"
         return 0
     fi
 
-    echo -e "${GREEN}[+] Starting SMTP enumeration...${NC}"
+    echo -e "${GREEN}[+] Starting SMTP enumeration...${NO_COLOR}"
     mkdir -p "$loot/smtp"
 
     # Get ports
     if [[ ! -s "$loot/raw/smtp_found" ]]; then
-        echo -e "${RED}[-] No SMTP ports found${NC}"
+        echo -e "${RED}[-] No SMTP ports found${NO_COLOR}"
         return 0
     fi
 
     while IFS= read -r port; do
         timeout "$timeout" smtp-user-enum -M VRFY -U /usr/share/metasploit-framework/data/wordlists/unix_users.txt -t "$IP" -p "$port" \
             | tee -a "$loot/smtp/users" 2>/dev/null || {
-            echo -e "${RED}[-] smtp-user-enum failed on port $port${NC}"
+            echo -e "${RED}[-] smtp-user-enum failed on port $port${NO_COLOR}"
         }
     done < <(awk '{print $1}' "$loot/raw/smtp_found" | cut -d'/' -f1)
 
     if grep -q "0 results" "$loot/smtp/users"; then
-        rm "$loot/smtp/users"
+        rm -f "$loot/smtp/users"
     fi
 
     echo "nc -nvv $IP $port" >> "$loot/smtp/manual_cmds"
     echo "telnet $IP $port" >> "$loot/smtp/manual_cmds"
     echo "smtp-user-enum -M VRFY -U /usr/share/metasploit-framework/data/wordlists/unix_users.txt -t $IP -p $port" >> "$loot/smtp/cmds_run"
 
-    rm "$loot/smtp/port_list"
-    rm "$loot/raw/smtp_found"
-    echo -e "${GREEN}[+] SMTP enum complete!${NC}"
+    rm -f "$loot/smtp/port_list"
+    rm -f "$loot/raw/smtp_found"
+    echo -e "${GREEN}[+] SMTP enum complete!${NO_COLOR}"
 }
 
 oracle_enum() {
@@ -342,37 +344,37 @@ oracle_enum() {
     local dry_run="${2:-}"
 
     if [[ "$dry_run" == "--dry-run" ]]; then
-        echo -e "${YELLOW}[+] Would run oracle_enum on $IP${NC}"
+        echo -e "${YELLOW}[+] Would run oracle_enum on $IP${NO_COLOR}"
         return 0
     fi
 
-    echo -e "${GREEN}[+] Starting Oracle enumeration...${NC}"
+    echo -e "${GREEN}[+] Starting Oracle enumeration...${NO_COLOR}"
     mkdir -p "$loot/oracle"
 
     # Run nmap
     timeout "$timeout" nmap -sV -p 1521 \
-        --script=oracle-enum-users.nse,oracle-sid-brute.nse,oracle-tns-version.nse \
-        "$IP" | tee -a "$loot/oracle/nmapstuff" 2>/dev/null || {
-        echo -e "${RED}[-] nmap Oracle scan failed${NC}"
+        --script=oracle-enum-users,oracle-sid-brute,oracle-tns-version \
+        "$IP" | tee -a "$loot/oracle/nmap_oracle" 2>/dev/null || {
+        echo -e "${RED}[-] nmap Oracle scan failed${NO_COLOR}"
     }
 
     # Run oscanner
-    timeout "$timeout" oscanner -v -s "$IP" -P 1521 | tee -a "$loot/oracle/" 2>/dev/null || {
-        echo -e "${RED}[-] oscanner failed${NC}"
+    timeout "$timeout" oscanner -v -s "$IP" -P 1521 | tee -a "$loot/oracle/oscanner_out" 2>/dev/null || {
+        echo -e "${RED}[-] oscanner failed${NO_COLOR}"
     }
 
     # Run odat
-    echo -e "${YELLOW}[+] Running ODAT...${NC}"
+    echo -e "${YELLOW}[+] Running ODAT...${NO_COLOR}"
     timeout "$timeout" odat tnscmd -s "$IP" --version --status --ping 2>/dev/null | tee -a "$loot/oracle/odat_tnscmd" 2>/dev/null || {
-        echo -e "${RED}[-] odat tnscmd failed${NC}"
+        echo -e "${RED}[-] odat tnscmd failed${NO_COLOR}"
     }
 
     timeout "$timeout" odat sidguesser -s "$IP" 2>/dev/null | tee -a "$loot/oracle/odat_enum" 2>/dev/null || {
-        echo -e "${RED}[-] odat sidguesser failed${NC}"
+        echo -e "${RED}[-] odat sidguesser failed${NO_COLOR}"
     }
 
-    rm "$loot/raw/oracle_found"
-    echo -e "${GREEN}[+] Oracle enum complete!${NC}"
+    rm -f "$loot/raw/oracle_found"
+    echo -e "${GREEN}[+] Oracle enum complete!${NO_COLOR}"
 }
 
 http_enum() {
@@ -380,16 +382,16 @@ http_enum() {
     local dry_run="${2:-}"
 
     if [[ "$dry_run" == "--dry-run" ]]; then
-        echo -e "${YELLOW}[+] Would run http_enum on $IP${NC}"
+        echo -e "${YELLOW}[+] Would run http_enum on $IP${NO_COLOR}"
         return 0
     fi
 
-    echo -e "${GREEN}[+] Starting HTTP enumeration...${NC}"
+    echo -e "${GREEN}[+] Starting HTTP enumeration...${NO_COLOR}"
     mkdir -p "$loot/http"
 
     # Check for ports
     if [[ ! -s "$loot/raw/http_found" ]]; then
-        echo -e "${RED}[-] No HTTP ports found${NC}"
+        echo -e "${RED}[-] No HTTP ports found${NO_COLOR}"
         return 0
     fi
 
@@ -420,11 +422,11 @@ http_enum() {
         local port_dir="$2"
 
         if ! curl -sI -m 5 "http://$IP:$port" &>/dev/null; then
-            echo -e "${RED}[-] Port $port unresponsive - skipping gobuster${NC}"
+            echo -e "${RED}[-] Port $port unresponsive - skipping gobuster${NO_COLOR}"
             return
         fi
 
-        echo -e "${YELLOW}[+] Bruteforcing directories (port $port)${NC}"
+        echo -e "${YELLOW}[+] Bruteforcing directories (port $port)${NO_COLOR}"
         timeout 300 gobuster dir \
             -t 40 \
             -u "http://$IP:$port" \
@@ -434,14 +436,13 @@ http_enum() {
             --timeout 8s \
             --delay 200ms \
             --status-codes 200,204,301,302,307,401,403,500 \
-            --status-codes-blacklist "" \
             --no-error \
             --quiet
 
         if [[ $? -eq 124 ]]; then
-            echo -e "${RED}[-] Gobuster timed out on port $port${NC}"
+            echo -e "${RED}[-] Gobuster timed out on port $port${NO_COLOR}"
         elif [[ ! -s "$port_dir/dirs_found" ]]; then
-            echo -e "${YELLOW}[-] No directories found on port $port${NC}"
+            echo -e "${YELLOW}[-] No directories found on port $port${NO_COLOR}"
         fi
     }
 
@@ -452,32 +453,32 @@ http_enum() {
 
         mkdir -p "$port_dir"
 
-        echo -e "${YELLOW}[+] Processing port $port${NC}"
+        echo -e "${YELLOW}[+] Processing port $port${NO_COLOR}"
 
         if ! verify_http_service "$port"; then
-            echo -e "${RED}[-] No HTTP service on port $port - skipping${NC}"
+            echo -e "${RED}[-] No HTTP service on port $port - skipping${NO_COLOR}"
             return
         fi
 
         # Run in parallel
         (
-            echo -e "${YELLOW}[+] Nikto scan${NC}"
+            echo -e "${YELLOW}[+] Nikto scan${NO_COLOR}"
             timeout 120 nikto -ask=no -h "$IP:$port" -T 123b >> "$port_dir/nikto" 2>&1
         ) &
 
         (
-            echo -e "${YELLOW}[+] SSL scan${NC}"
+            echo -e "${YELLOW}[+] SSL scan${NO_COLOR}"
             timeout 60 sslscan --show-certificate "$IP:$port" >> "$port_dir/sslinfo" 2>&1
         ) &
 
         (
-            echo -e "${YELLOW}[+] Fetching pages${NC}"
+            echo -e "${YELLOW}[+] Fetching pages${NO_COLOR}"
             curl -sSiLk -m 15 "$IP:$port/index.html" >> "$port_dir/landingpage" 2>&1
             curl -sSiLk -m 10 "$IP:$port/robots.txt" >> "$port_dir/robots.txt" 2>&1
         ) &
 
         (
-            echo -e "${YELLOW}[+] WhatWeb scan${NC}"
+            echo -e "${YELLOW}[+] WhatWeb scan${NO_COLOR}"
             timeout 90 whatweb -a3 "$IP:$port" >> "$port_dir/whatweb" 2>&1
         ) &
 
@@ -497,18 +498,24 @@ http_enum() {
         } >> "$port_dir/cmds_run"
     }
 
-    # Run in parallel
+    # Run in parallel with a cap of 4 concurrent port scans
     if (( pct > 1 )); then
-        echo -e "${YELLOW}[+] Scanning $pct HTTP ports in parallel${NC}"
+        echo -e "${YELLOW}[+] Scanning $pct HTTP ports in parallel${NO_COLOR}"
+        local _http_running=0
         for port in "${ports[@]}"; do
+            while (( _http_running >= 4 )); do
+                wait -n 2>/dev/null || wait
+                (( _http_running-- ))
+            done
             process_port "$port" &
+            (( _http_running++ ))
         done
         wait
     else
         process_port "${ports[0]}"
     fi
 
-    echo -e "${GREEN}[+] HTTP enumeration complete!${NC}"
+    echo -e "${GREEN}[+] HTTP enumeration complete!${NO_COLOR}"
 }
 
 smb_enum() {
@@ -516,23 +523,23 @@ smb_enum() {
     local dry_run="${2:-}"
 
     if [[ "$dry_run" == "--dry-run" ]]; then
-        echo -e "${YELLOW}[+] Would run smb_enum on $IP${NC}"
+        echo -e "${YELLOW}[+] Would run smb_enum on $IP${NO_COLOR}"
         return 0
     fi
 
-    echo -e "${GREEN}[+] Starting SMB enumeration...${NC}"
+    echo -e "${GREEN}[+] Starting SMB enumeration...${NO_COLOR}"
     mkdir -p "$loot/smb/shares"
 
     # Vulnerability checks
-    echo -e "${BLUE}[+] Checking for common SMB vulnerabilities${NC}"
+    echo -e "${BLUE}[+] Checking for common SMB vulnerabilities${NO_COLOR}"
     (
         timeout "$timeout" nmap --script smb-vuln-ms17-010 --script-args=unsafe=1 -p 139,445 "$IP" -oN "$loot/smb/eternalblue"
-        grep -q "smb-vuln-ms17-010:" "$loot/smb/eternalblue" || rm "$loot/smb/eternalblue"
+        grep -q "smb-vuln-ms17-010:" "$loot/smb/eternalblue" || rm -f "$loot/smb/eternalblue"
     ) &
 
     (
         timeout "$timeout" nmap --script smb-vuln-ms08-067 --script-args=unsafe=1 -p 445 "$IP" -oN "$loot/smb/08-067"
-        grep -q "smb-vuln-ms08-067:" "$loot/smb/08-067" || rm "$loot/smb/08-067"
+        grep -q "smb-vuln-ms08-067:" "$loot/smb/08-067" || rm -f "$loot/smb/08-067"
     ) &
 
     (
@@ -540,7 +547,7 @@ smb_enum() {
     ) &
 
     # Share enumeration
-    echo -e "${BLUE}[+] Enumerating SMB shares${NC}"
+    echo -e "${BLUE}[+] Enumerating SMB shares${NO_COLOR}"
     (
         timeout "$timeout" nmap --script smb-enum-shares -p 139,445 "$IP" -oN "$loot/smb/shares/nmap_shares"
     ) &
@@ -558,19 +565,19 @@ smb_enum() {
         )
 
         for attempt in "${attempts[@]}"; do
-            $attempt > "$loot/smb/shares/smbclient_out" 2>&1
+            eval "$attempt" > "$loot/smb/shares/smbclient_out" 2>&1
             if ! grep -q "Not enough '\' characters in service" "$loot/smb/shares/smbclient_out"; then
                 break
             fi
         done
 
         if grep -q "Not enough '\' characters in service" "$loot/smb/shares/smbclient_out"; then
-            rm "$loot/smb/shares/smbclient_out"
+            rm -f "$loot/smb/shares/smbclient_out"
             echo "smbclient could not be automatically run, rerun smbclient -N -H [IP] manually" >> "$loot/smb/notes"
         fi
 
         if grep -q "Error NT_STATUS_UNSUCCESSFUL" "$loot/smb/shares/smbclient_out"; then
-            rm "$loot/smb/shares/smbclient_out"
+            rm -f "$loot/smb/shares/smbclient_out"
         fi
 
         if [[ -s "$loot/smb/shares/smbclient_out" ]]; then
@@ -582,34 +589,34 @@ smb_enum() {
     wait
 
     # Clean up bad output files
-    echo -e "${BLUE}[+] Cleaning up invalid output files${NC}"
-    find "$loot/smb" -type f $ -name "*.nmap" -o -name "*.txt" $ | while read -r file; do
+    echo -e "${BLUE}[+] Cleaning up invalid output files${NO_COLOR}"
+    find "$loot/smb" -type f \( -name "*.nmap" -o -name "*.txt" \) | while read -r file; do
         if grep -q -E "QUITTING!|ERROR: Script execution failed|segmentation fault" "$file"; then
-            rm "$file"
+            rm -f "$file"
         fi
     done
 
     # Log commands
-    echo -e "${BLUE}[+] Logging executed commands${NC}"
+    echo -e "${BLUE}[+] Logging executed commands${NO_COLOR}"
     cat > "$loot/smb/cmds_run" << EOF
 nmap --script smb-vuln-ms17-010 --script-args=unsafe=1 -p 139,445 $IP
 nmap --script smb-vuln-ms08-067 --script-args=unsafe=1 -p 445 $IP
 nmap --script smb-vuln* -p 139,445 $IP
 nmap --script smb-enum-shares -p 139,445 $IP
 smbmap -H $IP -R
-smbclient -N -L \\\\\\\\$IP
+smbclient -N -L //$IP
 EOF
 
     # Cleanup
     rm -f "$loot/raw/smb_found"
-    echo -e "${GREEN}[+] SMB enumeration complete!${NC}"
-    echo -e "${CYAN}[+] Results saved to: $loot/smb/${NC}"
+    echo -e "${GREEN}[+] SMB enumeration complete!${NO_COLOR}"
+    echo -e "${CYAN}[+] Results saved to: $loot/smb/${NO_COLOR}"
 }
 
 linux_enum() {
-    echo -e "${YELLOW}[+] Work in progress - Linux enumeration not yet implemented${NC}"
+    echo -e "${YELLOW}[+] Work in progress - Linux enumeration not yet implemented${NO_COLOR}"
 }
 
 windows_enum() {
-    echo -e "${YELLOW}[+] Work in progress - Windows enumeration not yet implemented${NC}"
+    echo -e "${YELLOW}[+] Work in progress - Windows enumeration not yet implemented${NO_COLOR}"
 }

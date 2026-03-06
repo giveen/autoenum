@@ -11,7 +11,7 @@ get_ip (){
         echo -e
         echo "Enter a target IP or hostname "
         tput bold;tput setaf 1; echo -en "Autoenum > ";tput sgr0;read unchecked_IP
-        if [ $nr ];then
+        if [[ -n "${NO_RESOLVE:-}" ]]; then
                 if [[ $unchecked_IP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]];then
                         IP="$unchecked_IP";sleep 1
                         tput setaf 4;echo -e "[+] IP set to $IP";tput sgr0;echo -e
@@ -19,15 +19,16 @@ get_ip (){
         else
                 if [[ $unchecked_IP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]];then
                         IP="$unchecked_IP";sleep 1
-                        cwd=$(pwd);ping -c 1 -W 3 $IP | head -n2 | tail -n1 > $cwd/tmp
-                        if ! grep -q "64 bytes" "tmp";then
+                        cwd=$(pwd);ping -c 1 -W 3 "$IP" | head -n2 | tail -n1 > "$cwd/tmp"
+                        if ! grep -q "64 bytes" "$cwd/tmp";then
                                 echo -e "[-] IP failed to resolve\n[-] Exiting..."
+                                rm -f "$cwd/tmp"
                                 exit
                         fi
-                        rm $cwd/tmp
+                        rm -f "$cwd/tmp"
                         tput setaf 4;echo -e "[+] IP set to $IP";tput sgr0;echo -e
-                elif [[ $unchecked_IP =~ [a-z,A-Z,0-9].[a-z]$ ]] || [[ $unchecked_IP =~ [a-z].[a-z,A-Z,0-9].[a-z]$ ]];then
-                        IP=$(host $unchecked_IP | head -n1 | awk '{print($4)}')
+                elif [[ $unchecked_IP =~ [a-zA-Z0-9]\.[a-z]$ ]] || [[ $unchecked_IP =~ [a-z]\.[a-zA-Z0-9]\.[a-z]$ ]];then
+                        IP=$(host "$unchecked_IP" | head -n1 | awk '{print($4)}')
                         tput setaf 4;echo -e "$unchecked_IP resolved to $IP\n";tput sgr0
                 else
                         tput setaf 8

@@ -26,7 +26,7 @@ declare -a REQUIRED_TOOLS=(
     "curl"
     "wget"
     "python3"
-    "python3-pip"
+    "pip3"
 )
 
 # === Helper Functions ===
@@ -34,6 +34,7 @@ declare -a REQUIRED_TOOLS=(
 log() {
     local level="$1"; shift
     local msg="$*"
+    [[ "${QUIET:-}" == "1" ]] && return 0
     echo -e "${BOLD}${level}${msg}${NO_COLOR}" >&2
 }
 
@@ -82,6 +83,13 @@ install_missing_tools() {
 }
 
 # === MAIN ===
+
+# Parse arguments
+for arg in "$@"; do
+    case "$arg" in
+        --quiet|-q) QUIET=1 ;;
+    esac
+done
 
 # Check for apt
 check_apt
