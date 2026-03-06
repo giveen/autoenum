@@ -103,6 +103,19 @@ _tag_os_from_scan() {
     fi
 }
 
+# Print a compact open-ports table from an nmap -oN output file.
+_print_port_summary() {
+    local scan_file="${1:-}"
+    [[ ! -s "$scan_file" ]] && return 0
+    local ports
+    ports=$(grep -E "^[0-9]+/(tcp|udp).*open" "$scan_file" 2>/dev/null) || return 0
+    [[ -z "$ports" ]] && return 0
+    echo -e "${BOLD}${GREEN}  ┌─ Open Ports ─────────────────────────────────────────${NO_COLOR}"
+    echo "$ports" | awk '{printf "  │  %-22s %-10s %s\n", $1, $2, $3}' \
+        | while IFS= read -r line; do echo -e "${GREEN}${line}${NO_COLOR}"; done
+    echo -e "${BOLD}${GREEN}  └───────────────────────────────────────────────────────${NO_COLOR}"
+}
+
 enum_goto() {
     # Configuration
     local MAX_PARALLEL=4  # Optimal for most systems
@@ -251,7 +264,7 @@ reg() {
             --max-rtt-timeout 1000ms \
             "$IP" \
             -oN "$scan_dir/top_1k" \
-            -oX "$scan_dir/raw/top_1k.xml"
+            -oX "$scan_dir/raw/top_1k.xml" > /dev/null 2>&1
     ) &
 
     (
@@ -262,7 +275,7 @@ reg() {
             --host-timeout 300s \
             --max-rtt-timeout 1000ms \
             -oX "$scan_dir/raw/full_scan.xml" \
-            -oN "$scan_dir/raw/full_scan"
+            -oN "$scan_dir/raw/full_scan" > /dev/null 2>&1
     ) &
 
     wait
@@ -301,6 +314,7 @@ reg() {
     }
 
     process_scans
+    _print_port_summary "$scan_dir/raw/full_scan"
 
     enum_goto
 }
@@ -332,7 +346,7 @@ aggr() {
             --host-timeout "${timeout}s" \
             --max-rtt-timeout 1000ms \
             "$IP" \
-            -oN "$IP/autoenum/aggr_scan/top_1k"
+            -oN "$IP/autoenum/aggr_scan/top_1k" > /dev/null 2>&1
     ) &
 
     (
@@ -344,7 +358,7 @@ aggr() {
             --max-rtt-timeout 1000ms \
             -Pn -v "$IP" \
             -oX "$IP/autoenum/aggr_scan/raw/xml_out" \
-            -oN "$IP/autoenum/aggr_scan/raw/full_scan"
+            -oN "$IP/autoenum/aggr_scan/raw/full_scan" > /dev/null 2>&1
         
         # Wait for XML file to fully write
         while [[ ! -s "$IP/autoenum/aggr_scan/raw/xml_out" ]]; do
@@ -403,6 +417,7 @@ aggr() {
 
     # Tag Windows OS from port-based detection
     _tag_os_from_scan "$IP/autoenum/aggr_scan/ports_and_services/services_running"
+    _print_port_summary "$IP/autoenum/aggr_scan/raw/full_scan"
 
     enum_goto "$timeout"
 }
@@ -433,7 +448,7 @@ top_1k() {
         --host-timeout 300s \
         --max-rtt-timeout 1000ms \
         -oX "$t1k/raw/xml_out" \
-        -oN "$t1k/ports_and_services/services" "$IP"
+        -oN "$t1k/ports_and_services/services" "$IP" > /dev/null 2>&1
 
     # 2. Validate XML before SearchSploit
     if [[ -s "$t1k/raw/xml_out" ]] && grep -q "<nmaprun" "$t1k/raw/xml_out"; then
@@ -461,6 +476,7 @@ top_1k() {
 
     # Tag Windows OS from port-based detection
     _tag_os_from_scan "$t1k/ports_and_services/services"
+    _print_port_summary "$t1k/ports_and_services/services"
 
     # Kill progress loop
     kill "$_progress_pid" 2>/dev/null || true
@@ -496,7 +512,7 @@ top_10k() {
         --max-rtt-timeout 1000ms \
         "$IP" \
         -oN "$scan_dir/raw/services" \
-        -oX "$scan_dir/raw/xml_out"
+        -oX "$scan_dir/raw/xml_out" > /dev/null 2>&1
 
     # Kill progress loop
     kill "$_progress_pid" 2>/dev/null || true
@@ -536,6 +552,7 @@ top_10k() {
 
         # Tag Windows OS from port-based detection
         _tag_os_from_scan "$scan_dir/ports_and_services/services"
+        _print_port_summary "$scan_dir/ports_and_services/services"
         echo -e "${GREEN}[+] Scan results processed and saved${NO_COLOR}"
     }
 
@@ -563,7 +580,7 @@ udp() {
         --max-rtt-timeout 1000ms \
         -T4 "$IP" \
         -oN "$udp_dir/scan" \
-        -oX "$udp_dir/raw/xml_out" 2>&1 | tee -a "$udp_dir/scan"
+        -oX "$udp_dir/raw/xml_out" > /dev/null 2>&1
     
     # Extract open ports
     grep "open/udp" "$udp_dir/scan" | awk '{print $1}' | cut -d'/' -f1 > "$udp_dir/ports_and_services/open_ports"
@@ -571,6 +588,7 @@ udp() {
     # Service-specific processing
     if [[ -s "$udp_dir/ports_and_services/open_ports" ]]; then
         echo -e "${GREEN}[+] Found open UDP ports: $(tr '\n' ' ' < "$udp_dir/ports_and_services/open_ports")${NO_COLOR}"
+        _print_port_summary "$udp_dir/scan"
         
         # Common UDP services check
         services=("snmp" "ntp" "dns" "dhcp" "tftp")

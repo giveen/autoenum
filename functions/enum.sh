@@ -33,7 +33,7 @@ redis_enum() {
     timeout "$timeout" nmap -sV -p 6379 --min-rate 500 \
         --host-timeout 60s \
         "$IP" --script redis-info \
-        | tee -a "$loot/redis/redis_info" 2>/dev/null || {
+        >> "$loot/redis/redis_info" 2>/dev/null || {
         echo -e "${RED}[-] Redis scan failed${NO_COLOR}"
     }
 
@@ -55,13 +55,13 @@ snmp_enum() {
 
     # Run onesixtyone with timeout
     timeout "$timeout" onesixtyone -c /usr/share/doc/onesixtyone/dict.txt "$IP" \
-        | tee -a "$loot/snmp/snmpenum" 2>/dev/null || {
+        >> "$loot/snmp/snmpenum" 2>/dev/null || {
         echo -e "${RED}[-] onesixtyone failed${NO_COLOR}"
     }
 
     # Run snmp-check
     timeout "$timeout" snmp-check -c public -v 1 -d "$IP" \
-        | tee -a "$loot/snmp/snmpcheck" 2>/dev/null || {
+        >> "$loot/snmp/snmpcheck" 2>/dev/null || {
         echo -e "${RED}[-] snmp-check failed${NO_COLOR}"
     }
 
@@ -69,7 +69,7 @@ snmp_enum() {
     if [[ -f "$loot/snmp/snmpcheck" ]] && grep -q "SNMP request timeout" "$loot/snmp/snmpcheck"; then
         rm -f "$loot/snmp/snmpcheck"
         timeout "$timeout" snmpwalk -c public -v2c "$IP" \
-            | tee -a "$loot/snmp/uderstuff" 2>/dev/null || {
+            >> "$loot/snmp/uderstuff" 2>/dev/null || {
             echo -e "${RED}[-] snmpwalk failed${NO_COLOR}"
         }
         if grep -q "timeout" "$loot/snmp/uderstuff"; then
@@ -111,13 +111,13 @@ rpc_enum() {
     # Run nmap rpcinfo script
     timeout "$timeout" nmap -sV -p "$port" --script=rpcinfo \
         --min-rate 500 --host-timeout 60s "$IP" \
-        | tee -a "$loot/rpc/ports" 2>/dev/null || {
+        >> "$loot/rpc/ports" 2>/dev/null || {
         echo -e "${RED}[-] nmap rpcinfo failed${NO_COLOR}"
     }
 
     # Query RPC services (rpcinfo, not rpcbind which is a daemon)
     timeout "$timeout" rpcinfo -p "$IP" \
-        | tee -a "$loot/rpc/versions" 2>/dev/null || {
+        >> "$loot/rpc/versions" 2>/dev/null || {
         echo -e "${RED}[-] rpcinfo query failed${NO_COLOR}"
     }
 
@@ -144,7 +144,7 @@ nfs_enum() {
 
     # Run nmap
     timeout "$timeout" nmap -p 111 --script nfs* "$IP" \
-        | tee "$loot/nfs/scripts" 2>/dev/null || {
+        > "$loot/nfs/scripts" 2>/dev/null || {
         echo -e "${RED}[-] nmap nfs failed${NO_COLOR}"
     }
 
@@ -175,7 +175,7 @@ pop3_enum() {
 
     # Run nmap
     timeout "$timeout" nmap -sV --script pop3-brute "$IP" \
-        | tee -a "$loot/pop3/brute" 2>/dev/null || {
+        >> "$loot/pop3/brute" 2>/dev/null || {
         echo -e "${RED}[-] nmap pop3-brute failed${NO_COLOR}"
     }
 
@@ -201,7 +201,7 @@ imap_enum() {
         echo -e "${YELLOW}[+] IMAP service version scan (143, 993)${NO_COLOR}"
         timeout "$timeout" nmap -p 143,993 -sV \
             --host-timeout 60s \
-            "$IP" | tee "$loot/imap/version_scan" 2>/dev/null || {
+            "$IP" > "$loot/imap/version_scan" 2>/dev/null || {
             echo -e "${RED}[-] IMAP version scan failed${NO_COLOR}"
         }
         echo "nmap -p 143,993 -sV $IP" >> "$loot/imap/cmds_run"
@@ -212,7 +212,7 @@ imap_enum() {
         echo -e "${YELLOW}[+] Enumerating IMAP capabilities${NO_COLOR}"
         timeout "$timeout" nmap -p 143 \
             --script imap-capabilities \
-            "$IP" | tee "$loot/imap/capabilities" 2>/dev/null || {
+            "$IP" > "$loot/imap/capabilities" 2>/dev/null || {
             echo -e "${RED}[-] imap-capabilities script failed${NO_COLOR}"
         }
         echo "nmap -p 143 --script imap-capabilities $IP" >> "$loot/imap/cmds_run"
@@ -223,7 +223,7 @@ imap_enum() {
         echo -e "${YELLOW}[+] Extracting NTLM authentication details${NO_COLOR}"
         timeout "$timeout" nmap -p 143 \
             --script imap-ntlm-info \
-            "$IP" | tee "$loot/imap/ntlm_info" 2>/dev/null || {
+            "$IP" > "$loot/imap/ntlm_info" 2>/dev/null || {
             echo -e "${RED}[-] imap-ntlm-info script failed${NO_COLOR}"
         }
         echo "nmap -p 143 --script imap-ntlm-info $IP" >> "$loot/imap/cmds_run"
@@ -262,7 +262,7 @@ ldap_enum() {
         echo -e "${YELLOW}[+] Running Nmap LDAP scripts${NO_COLOR}"
         timeout "$timeout" nmap -vv -Pn -sV -p 389,636 \
             --script='(ldap* or ssl*) and not (brute or broadcast or dos or external or fuzzer)' \
-            "$IP" | tee "$loot/ldap/nmap_ldap_scripts.txt" 2>/dev/null || {
+            "$IP" > "$loot/ldap/nmap_ldap_scripts.txt" 2>/dev/null || {
             echo -e "${RED}[-] Nmap LDAP scripts failed${NO_COLOR}"
         }
         echo "nmap -vv -Pn -sV -p 389,636 --script='(ldap* or ssl*) and not (brute or broadcast or dos or external or fuzzer)' $IP" >> "$loot/ldap/cmds_run"
@@ -272,7 +272,7 @@ ldap_enum() {
     (
         echo -e "${YELLOW}[+] Running ldapsearch for base DN${NO_COLOR}"
         timeout "$timeout" ldapsearch -x -H "ldap://$IP:389" -s base namingcontexts 2>/dev/null \
-            | tee "$loot/ldap/ldapsearch_base.txt" 2>/dev/null || {
+            > "$loot/ldap/ldapsearch_base.txt" 2>/dev/null || {
             echo -e "${RED}[-] ldapsearch base failed${NO_COLOR}"
         }
         echo "ldapsearch -x -H ldap://$IP:389 -s base namingcontexts" >> "$loot/ldap/cmds_run"
@@ -282,7 +282,7 @@ ldap_enum() {
     (
         echo -e "${YELLOW}[+] Checking anonymous binding${NO_COLOR}"
         timeout "$timeout" ldapwhoami -x -H "ldap://$IP:389" 2>/dev/null \
-            | tee "$loot/ldap/anonymous_bind.txt" 2>/dev/null || {
+            > "$loot/ldap/anonymous_bind.txt" 2>/dev/null || {
             echo -e "${RED}[-] ldapwhoami failed${NO_COLOR}"
         }
         echo "ldapwhoami -x -H ldap://$IP:389" >> "$loot/ldap/cmds_run"
@@ -300,7 +300,7 @@ ldap_enum() {
         (
             echo -e "${YELLOW}[+] Enumerating LDAP objects${NO_COLOR}"
             timeout "$timeout" ldapsearch -x -H "ldap://$IP:389" -b "$base_dn" '(objectClass=*)' 2>/dev/null \
-                | tee "$loot/ldap/ldapsearch_full.txt" 2>/dev/null || {
+                > "$loot/ldap/ldapsearch_full.txt" 2>/dev/null || {
                 echo -e "${RED}[-] ldapsearch full failed${NO_COLOR}"
             }
             echo "ldapsearch -x -H ldap://$IP:389 -b '$base_dn' '(objectClass=*)'" >> "$loot/ldap/cmds_run"
@@ -310,7 +310,7 @@ ldap_enum() {
         (
             echo -e "${YELLOW}[+] Checking password policy${NO_COLOR}"
             timeout "$timeout" ldapsearch -x -H "ldap://$IP:389" -b "$base_dn" '(objectClass=pwdPolicy)' 2>/dev/null \
-                | tee "$loot/ldap/password_policy.txt" 2>/dev/null || {
+                > "$loot/ldap/password_policy.txt" 2>/dev/null || {
                 echo -e "${RED}[-] ldapsearch policy failed${NO_COLOR}"
             }
         ) &
@@ -354,7 +354,7 @@ dns_enum() {
         echo -e "${YELLOW}[+] Running Nmap DNS scripts${NO_COLOR}"
         timeout "$timeout" nmap -p 53 -sV \
             --script "dns-nsid,dns-service-discovery,dns-recursion,dns-zone-transfer" \
-            "$IP" | tee "$loot/dns/nmap_dns" 2>/dev/null || {
+            "$IP" > "$loot/dns/nmap_dns" 2>/dev/null || {
             echo -e "${RED}[-] Nmap DNS scripts failed${NO_COLOR}"
         }
         echo "nmap -p 53 -sV --script dns-nsid,dns-service-discovery,dns-recursion,dns-zone-transfer $IP" >> "$loot/dns/cmds_run"
@@ -365,7 +365,7 @@ dns_enum() {
         echo -e "${YELLOW}[+] Running dnsrecon${NO_COLOR}"
         if [[ -n "$base_domain" ]]; then
             timeout "$timeout" dnsrecon -d "$base_domain" -n "$IP" 2>/dev/null \
-                | tee "$loot/dns/dnsrecon" 2>/dev/null || {
+                > "$loot/dns/dnsrecon" 2>/dev/null || {
                 echo -e "${RED}[-] dnsrecon failed${NO_COLOR}"
             }
             echo "dnsrecon -d $base_domain -n $IP" >> "$loot/dns/cmds_run"
@@ -373,7 +373,7 @@ dns_enum() {
             # No domain — do reverse range sweep of the /24
             local range="${IP%.*}.0/24"
             timeout "$timeout" dnsrecon -r "$range" -n "$IP" 2>/dev/null \
-                | tee "$loot/dns/dnsrecon" 2>/dev/null || {
+                > "$loot/dns/dnsrecon" 2>/dev/null || {
                 echo -e "${RED}[-] dnsrecon reverse sweep failed${NO_COLOR}"
             }
             echo "dnsrecon -r $range -n $IP" >> "$loot/dns/cmds_run"
@@ -385,13 +385,13 @@ dns_enum() {
     # === Zone transfer attempts (need a domain) ===
     if [[ -n "$base_domain" ]]; then
         echo -e "${YELLOW}[+] Attempting zone transfer for $base_domain${NO_COLOR}"
-        timeout 30 dig axfr "@$IP" "$base_domain" | tee "$loot/dns/zone_transfer" 2>/dev/null || true
+        timeout 30 dig axfr "@$IP" "$base_domain" > "$loot/dns/zone_transfer" 2>/dev/null || true
         echo "dig axfr @$IP $base_domain" >> "$loot/dns/cmds_run"
 
         # Also try the full hostname's domain if different
         if [[ -n "$domain" && "$domain" != "$base_domain" ]]; then
             echo -e "${YELLOW}[+] Attempting zone transfer for $domain${NO_COLOR}"
-            timeout 30 dig axfr "@$IP" "$domain" | tee -a "$loot/dns/zone_transfer" 2>/dev/null || true
+            timeout 30 dig axfr "@$IP" "$domain" >> "$loot/dns/zone_transfer" 2>/dev/null || true
             echo "dig axfr @$IP $domain" >> "$loot/dns/cmds_run"
         fi
     fi
@@ -418,7 +418,7 @@ dns_enum() {
                 echo -e "${YELLOW}[+] Running dnsenum subdomain bruteforce${NO_COLOR}"
                 timeout "$timeout" dnsenum --dnsserver "$IP" --enum \
                     -f "$wordlist" "$base_domain" 2>/dev/null \
-                    | tee "$loot/dns/dnsenum" 2>/dev/null || {
+                    > "$loot/dns/dnsenum" 2>/dev/null || {
                     echo -e "${RED}[-] dnsenum failed${NO_COLOR}"
                 }
                 echo "dnsenum --dnsserver $IP --enum -f $wordlist $base_domain" >> "$loot/dns/cmds_run"
@@ -429,7 +429,7 @@ dns_enum() {
                 echo -e "${YELLOW}[+] Running dnsrecon subdomain bruteforce${NO_COLOR}"
                 timeout "$timeout" dnsrecon -d "$base_domain" -n "$IP" \
                     -t brt -D "$wordlist" 2>/dev/null \
-                    | tee "$loot/dns/dnsrecon_brute" 2>/dev/null || {
+                    > "$loot/dns/dnsrecon_brute" 2>/dev/null || {
                     echo -e "${RED}[-] dnsrecon brute failed${NO_COLOR}"
                 }
                 echo "dnsrecon -d $base_domain -n $IP -t brt -D $wordlist" >> "$loot/dns/cmds_run"
@@ -467,7 +467,7 @@ ftp_enum() {
     while IFS= read -r port; do
         timeout "$timeout" nmap -sV -Pn -p "$port" \
             --script=ftp-anon,ftp-bounce,ftp-libopie,ftp-proftpd-backdoor,ftp-vsftpd-backdoor,ftp-vuln-cve2010-4221,ftp-syst \
-            -v "$IP" | tee -a "$loot/ftp/ftp_scripts" 2>/dev/null || {
+            -v "$IP" >> "$loot/ftp/ftp_scripts" 2>/dev/null || {
             echo -e "${RED}[-] nmap FTP scan failed on port $port${NO_COLOR}"
         }
         echo "nmap -sV -Pn -p $port --script=ftp-anon,ftp-bounce,ftp-libopie,ftp-proftpd-backdoor,ftp-vsftpd-backdoor,ftp-vuln-cve2010-4221,ftp-syst -v $IP" >> "$loot/ftp/cmds_run"
@@ -498,7 +498,7 @@ smtp_enum() {
 
     while IFS= read -r port; do
         timeout "$timeout" smtp-user-enum -M VRFY -U /usr/share/metasploit-framework/data/wordlists/unix_users.txt -t "$IP" -p "$port" \
-            | tee -a "$loot/smtp/users" 2>/dev/null || {
+            >> "$loot/smtp/users" 2>/dev/null || {
             echo -e "${RED}[-] smtp-user-enum failed on port $port${NO_COLOR}"
         }
         echo "nc -nvv $IP $port" >> "$loot/smtp/manual_cmds"
@@ -530,22 +530,22 @@ oracle_enum() {
     # Run nmap
     timeout "$timeout" nmap -sV -p 1521 \
         --script=oracle-enum-users,oracle-sid-brute,oracle-tns-version \
-        "$IP" | tee -a "$loot/oracle/nmap_oracle" 2>/dev/null || {
+        "$IP" >> "$loot/oracle/nmap_oracle" 2>/dev/null || {
         echo -e "${RED}[-] nmap Oracle scan failed${NO_COLOR}"
     }
 
     # Run oscanner
-    timeout "$timeout" oscanner -v -s "$IP" -P 1521 | tee -a "$loot/oracle/oscanner_out" 2>/dev/null || {
+    timeout "$timeout" oscanner -v -s "$IP" -P 1521 >> "$loot/oracle/oscanner_out" 2>/dev/null || {
         echo -e "${RED}[-] oscanner failed${NO_COLOR}"
     }
 
     # Run odat
     echo -e "${YELLOW}[+] Running ODAT...${NO_COLOR}"
-    timeout "$timeout" odat tnscmd -s "$IP" --version --status --ping 2>/dev/null | tee -a "$loot/oracle/odat_tnscmd" 2>/dev/null || {
+    timeout "$timeout" odat tnscmd -s "$IP" --version --status --ping 2>/dev/null >> "$loot/oracle/odat_tnscmd" 2>/dev/null || {
         echo -e "${RED}[-] odat tnscmd failed${NO_COLOR}"
     }
 
-    timeout "$timeout" odat sidguesser -s "$IP" 2>/dev/null | tee -a "$loot/oracle/odat_enum" 2>/dev/null || {
+    timeout "$timeout" odat sidguesser -s "$IP" 2>/dev/null >> "$loot/oracle/odat_enum" 2>/dev/null || {
         echo -e "${RED}[-] odat sidguesser failed${NO_COLOR}"
     }
 
@@ -839,7 +839,7 @@ linux_enum() {
         echo -e "${YELLOW}[+] Running SSH enumeration scripts${NO_COLOR}"
         timeout "$timeout" nmap -p 22,2222 -sV \
             --script "ssh-auth-methods,ssh-hostkey,ssh2-enum-algos" \
-            "$IP" | tee "$loot/linux/nmap_ssh" 2>/dev/null || {
+            "$IP" > "$loot/linux/nmap_ssh" 2>/dev/null || {
             echo -e "${RED}[-] nmap SSH scripts failed${NO_COLOR}"
         }
         echo "nmap -p 22,2222 -sV --script ssh-auth-methods,ssh-hostkey,ssh2-enum-algos $IP" >> "$loot/linux/cmds_run"
@@ -849,14 +849,14 @@ linux_enum() {
     (
         echo -e "${YELLOW}[+] Checking for NFS exports${NO_COLOR}"
         timeout 30 showmount -e "$IP" 2>/dev/null \
-            | tee "$loot/linux/nfs_showmount" 2>/dev/null || {
+            > "$loot/linux/nfs_showmount" 2>/dev/null || {
             echo -e "${YELLOW}[-] showmount failed (NFS may not be exposed)${NO_COLOR}"
         }
         echo "showmount -e $IP" >> "$loot/linux/cmds_run"
 
         timeout "$timeout" nmap -p 111,2049 -sV \
             --script "nfs-ls,nfs-statfs,nfs-showmount,rpcinfo" \
-            "$IP" | tee "$loot/linux/nmap_nfs" 2>/dev/null || {
+            "$IP" > "$loot/linux/nmap_nfs" 2>/dev/null || {
             echo -e "${RED}[-] nmap NFS scripts failed${NO_COLOR}"
         }
         echo "nmap -p 111,2049 -sV --script nfs-ls,nfs-statfs,nfs-showmount,rpcinfo $IP" >> "$loot/linux/cmds_run"
@@ -866,13 +866,13 @@ linux_enum() {
     (
         echo -e "${YELLOW}[+] Checking for Rsync anonymous access${NO_COLOR}"
         timeout 15 rsync --list-only rsync://"$IP"/ 2>/dev/null \
-            | tee "$loot/linux/rsync_modules" 2>/dev/null || {
+            > "$loot/linux/rsync_modules" 2>/dev/null || {
             echo -e "${YELLOW}[-] rsync anonymous listing failed (service may not be running)${NO_COLOR}"
         }
         echo "rsync --list-only rsync://$IP/" >> "$loot/linux/cmds_run"
 
         timeout "$timeout" nmap -p 873 --script rsync-list-modules \
-            "$IP" | tee "$loot/linux/nmap_rsync" 2>/dev/null || {
+            "$IP" > "$loot/linux/nmap_rsync" 2>/dev/null || {
             echo -e "${RED}[-] nmap rsync scripts failed${NO_COLOR}"
         }
         echo "nmap -p 873 --script rsync-list-modules $IP" >> "$loot/linux/cmds_run"
@@ -973,7 +973,7 @@ windows_enum() {
     (
         echo -e "${YELLOW}[+] Running nxc SMB fingerprint${NO_COLOR}"
         timeout "$timeout" nxc smb "$IP" 2>/dev/null \
-            | tee "$loot/windows/nxc_smb" 2>/dev/null || {
+            > "$loot/windows/nxc_smb" 2>/dev/null || {
             echo -e "${RED}[-] nxc smb failed${NO_COLOR}"
         }
         echo "nxc smb $IP" >> "$loot/windows/cmds_run"
@@ -984,7 +984,7 @@ windows_enum() {
         echo -e "${YELLOW}[+] Running nmap Windows fingerprint scripts${NO_COLOR}"
         timeout "$timeout" nmap -p 135,139,445 -sV \
             --script "smb-os-discovery,smb-security-mode,smb2-security-mode,msrpc-enum" \
-            "$IP" | tee "$loot/windows/nmap_win_scripts" 2>/dev/null || {
+            "$IP" > "$loot/windows/nmap_win_scripts" 2>/dev/null || {
             echo -e "${RED}[-] nmap Windows scripts failed${NO_COLOR}"
         }
         echo "nmap -p 135,139,445 -sV --script smb-os-discovery,smb-security-mode,smb2-security-mode,msrpc-enum $IP" >> "$loot/windows/cmds_run"
@@ -994,7 +994,7 @@ windows_enum() {
     (
         echo -e "${YELLOW}[+] Running enum4linux-ng${NO_COLOR}"
         timeout "$timeout" enum4linux-ng -A "$IP" 2>/dev/null \
-            | tee "$loot/windows/enum4linux_ng" 2>/dev/null || {
+            > "$loot/windows/enum4linux_ng" 2>/dev/null || {
             echo -e "${RED}[-] enum4linux-ng failed${NO_COLOR}"
         }
         echo "enum4linux-ng -A $IP" >> "$loot/windows/cmds_run"
@@ -1004,7 +1004,7 @@ windows_enum() {
     (
         echo -e "${YELLOW}[+] Attempting rpcclient null session${NO_COLOR}"
         timeout 30 rpcclient -U "" -N "$IP" -c "enumdomusers" 2>/dev/null \
-            | tee "$loot/windows/rpcclient_users" 2>/dev/null || {
+            > "$loot/windows/rpcclient_users" 2>/dev/null || {
             echo -e "${YELLOW}[-] rpcclient null session failed (expected on hardened targets)${NO_COLOR}"
         }
         echo "rpcclient -U '' -N $IP -c 'enumdomusers'" >> "$loot/windows/cmds_run"
@@ -1019,7 +1019,7 @@ windows_enum() {
         if [[ -n "$base_dn" ]]; then
             echo -e "${YELLOW}[+] LDAP base DN available ($base_dn) — trying impacket-GetADUsers (unauthenticated)${NO_COLOR}"
             timeout "$timeout" impacket-GetADUsers -all -dc-ip "$IP" "$base_dn" 2>/dev/null \
-                | tee "$loot/windows/ad_users" 2>/dev/null || {
+                > "$loot/windows/ad_users" 2>/dev/null || {
                 echo -e "${YELLOW}[-] impacket-GetADUsers failed (may require credentials)${NO_COLOR}"
             }
             echo "impacket-GetADUsers -all -dc-ip $IP $base_dn" >> "$loot/windows/cmds_run"
