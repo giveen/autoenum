@@ -237,7 +237,8 @@ menu (){
             "exit")
                 tput setaf 8; echo "[-] Terminating session..."
                 tput sgr0
-                sleep 1.5
+                _kill_enum_windows
+                sleep 0.5
                 exit 0
                 ;;
             *)

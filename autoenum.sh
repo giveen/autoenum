@@ -30,9 +30,22 @@ BOLD='\033[1m'
 NO_COLOR='\033[0m'
 
 # === SIGNAL HANDLING ===
+_kill_enum_windows() {
+    local _all=(
+        redis_enum snmp_enum rpc_enum pop3_enum imap_enum dns_enum
+        ftp_enum ldap_enum smtp_enum oracle_enum smb_enum http_enum
+        windows_enum linux_enum
+    )
+    local _sess="${AUTOENUM_SESSION:-autoenum}"
+    for _w in "${_all[@]}"; do
+        tmux kill-window -t "${_sess}:${_w}" 2>/dev/null || true
+    done
+}
+export -f _kill_enum_windows
+
 _autoenum_cleanup() {
-    echo -e "\n${RED}[!] Interrupted — killing background processes...${NO_COLOR}"
-    # kill 0 sends SIGTERM to every process in the process group (all nmap/gobuster jobs)
+    echo -e "\n${RED}[!] Interrupted — killing background processes and enum windows...${NO_COLOR}"
+    _kill_enum_windows
     kill 0
 }
 trap '_autoenum_cleanup' SIGINT SIGTERM
@@ -106,6 +119,8 @@ source "$DIR/functions/menu.sh"
 # === START ===
 clear
 banner
+# Clean up any enum windows left over from a previous session
+_kill_enum_windows
 if [[ -n "${NO_RESOLVE:-}" ]]; then
     tput setaf 2
     echo -en "\n[*] Autoenum set to noresolve mode"
