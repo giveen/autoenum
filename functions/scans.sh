@@ -132,47 +132,93 @@ enum_goto() {
         "linux:linux_enum"
     )
 
-    echo -e "${CYAN}[+] Starting service enumeration with parallel execution (timeout: $timeout)${NO_COLOR}"
-    
-    # Process regular services with parallel job control
+    # ── Discover what's available ─────────────────────────────────────────────
+    local found_services=()
+    local found_funcs=()
+    local found_os_services=()
+    local found_os_funcs=()
+
     for service in "${services[@]}"; do
         local file="${service%%:*}"
         local func="${service##*:}"
-        
         if [[ -s "$loot/raw/${file}_found" ]]; then
-            # Wait if we've reached max parallel processes
-            while (( running >= MAX_PARALLEL )); do
-                wait -n
-                ((running--))
-            done
-            
-            echo -e "${GREEN}[+] Found $file - launching $func${NO_COLOR}"
-            # timeout cannot wrap shell functions directly; use bash -c to export and call them
-            ( timeout "$timeout" bash -c "$(declare -f "$func"); IP='$IP' loot='$loot' $func" \
-                || echo -e "${RED}[-] $func timed out${NO_COLOR}" ) &
-            ((running++))
+            found_services+=("$file")
+            found_funcs+=("$func")
         fi
     done
 
-    # Wait for all service enumerations to complete
-    wait
-    
-    # Process OS-specific enumerations (sequential)
     for service in "${os_services[@]}"; do
         local file="${service%%:*}"
         local func="${service##*:}"
-        
         if [[ -s "$loot/raw/${file}_found" ]]; then
-            echo -e "${YELLOW}[+] Running OS-specific enumeration: $func${NO_COLOR}"
-            timeout "$timeout" bash -c "$(declare -f "$func"); IP='$IP' loot='$loot' $func" \
-                || echo -e "${RED}[-] $func failed${NO_COLOR}"
+            found_os_services+=("$file")
+            found_os_funcs+=("$func")
         fi
     done
 
+    # ── Header ────────────────────────────────────────────────────────────────
+    echo -e "\n${BOLD}${CYAN}══════════════════════════════════════════════════════${NO_COLOR}"
+    echo -e "${BOLD}${CYAN}  SECONDARY ENUMERATION — $(date '+%H:%M:%S')${NO_COLOR}"
+    echo -e "${BOLD}${CYAN}══════════════════════════════════════════════════════${NO_COLOR}"
+
+    if (( ${#found_services[@]} == 0 )) && (( ${#found_os_services[@]} == 0 )); then
+        echo -e "${YELLOW}  No enumerable services detected — skipping secondary scans${NO_COLOR}"
+        find "$loot/raw" -type f -empty -delete 2>/dev/null
+        return 0
+    fi
+
+    # Detected services summary
+    if (( ${#found_services[@]} > 0 )); then
+        echo -e "${GREEN}  Services detected : ${found_services[*]}${NO_COLOR}"
+    fi
+    if (( ${#found_os_services[@]} > 0 )); then
+        echo -e "${YELLOW}  OS-specific       : ${found_os_services[*]}${NO_COLOR}"
+    fi
+    echo -e "${CYAN}  Timeout per scan  : ${timeout}s   Max parallel: ${MAX_PARALLEL}${NO_COLOR}"
+    echo -e "${BOLD}${CYAN}──────────────────────────────────────────────────────${NO_COLOR}\n"
+
+    # ── Launch service enums (parallel) ───────────────────────────────────────
+    local launched=()
+    for i in "${!found_funcs[@]}"; do
+        local file="${found_services[$i]}"
+        local func="${found_funcs[$i]}"
+
+        while (( running >= MAX_PARALLEL )); do
+            wait -n
+            (( running-- ))
+        done
+
+        echo -e "${GREEN}  [$(date '+%H:%M:%S')] ▶ Launching ${func} (${file})${NO_COLOR}"
+        ( timeout "$timeout" bash -c "$(declare -f "$func"); IP='$IP' loot='$loot' $func" \
+            || echo -e "${RED}  [-] ${func} timed out or failed${NO_COLOR}" ) &
+        (( running++ ))
+        launched+=("$func")
+    done
+
+    # Wait for all parallel jobs
+    wait
+
+    # ── OS-specific enums (sequential, after service enums finish) ─────────────
+    for i in "${!found_os_funcs[@]}"; do
+        local file="${found_os_services[$i]}"
+        local func="${found_os_funcs[$i]}"
+        echo -e "${YELLOW}  [$(date '+%H:%M:%S')] ▶ Launching ${func} (OS: ${file})${NO_COLOR}"
+        timeout "$timeout" bash -c "$(declare -f "$func"); IP='$IP' loot='$loot' $func" \
+            || echo -e "${RED}  [-] ${func} failed${NO_COLOR}"
+        launched+=("$func")
+    done
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    echo -e "\n${BOLD}${CYAN}══════════════════════════════════════════════════════${NO_COLOR}"
+    echo -e "${BOLD}${GREEN}  ENUMERATION COMPLETE — $(date '+%H:%M:%S')${NO_COLOR}"
+    if (( ${#launched[@]} > 0 )); then
+        echo -e "${GREEN}  Scans run : ${launched[*]}${NO_COLOR}"
+    fi
+    echo -e "${CYAN}  Loot dir  : $loot${NO_COLOR}"
+    echo -e "${BOLD}${CYAN}══════════════════════════════════════════════════════${NO_COLOR}\n"
+
     # Cleanup empty files
     find "$loot/raw" -type f -empty -delete 2>/dev/null
-    
-    echo -e "${CYAN}[+] Enumeration complete${NO_COLOR}"
 }
 
 # === SCAN FUNCTIONS ===
