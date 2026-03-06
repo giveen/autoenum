@@ -30,10 +30,12 @@ declare -a REQUIRED_TOOLS=(
     "nxc"
 )
 
-# === Data packages checked by directory/file presence rather than command -v ===
+# === Data packages checked by path presence rather than command -v ===
 # Format: "apt_package_name:path_to_check"
+# Use this when the apt package name differs from the command name.
 declare -a REQUIRED_DATA_PACKAGES=(
     "seclists:/usr/share/seclists"
+    "exploitdb:/usr/bin/searchsploit"
 )
 
 # === Helper Functions ===
