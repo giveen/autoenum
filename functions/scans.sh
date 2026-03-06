@@ -20,7 +20,7 @@ NO_COLOR='\033[0m'
 OS_guess() {
     # Get TTL value with error handling
     ttl=$(ping -c 1 -W 3 "$IP" 2>/dev/null | awk -F'ttl=' '/ttl=/{print $2}' | awk '{print $1}')
-    
+
     # If ping failed, try one fallback method
     if [[ -z "$ttl" ]]; then
         ttl=$(nmap -n -sn "$IP" 2>/dev/null | awk -F'ttl=' '/ttl=/{print $2}' | head -1)
@@ -299,8 +299,8 @@ reg() {
 
         # Searchsploit processing
         if [[ -s "$scan_dir/raw/full_scan.xml" ]]; then
-            searchsploit -j --nmap "$scan_dir/raw/full_scan.xml" > "$loot/exploits/searchsploit_nmap.json"
-            searchsploit --nmap "$scan_dir/raw/full_scan.xml" > "$loot/exploits/searchsploit_nmap"
+            searchsploit -j --nmap "$scan_dir/raw/full_scan.xml" > "$loot/exploits/searchsploit_nmap.json" 2>/dev/null || true
+            searchsploit --nmap "$scan_dir/raw/full_scan.xml" > "$loot/exploits/searchsploit_nmap" 2>/dev/null || true
         fi
 
         # Service-specific files
@@ -363,7 +363,7 @@ aggr() {
             -Pn -v "$IP" \
             -oX "$IP/autoenum/aggr_scan/raw/xml_out" \
             -oN "$IP/autoenum/aggr_scan/raw/full_scan" > /dev/null 2>&1
-        
+
         # Wait for XML file to fully write
         while [[ ! -s "$IP/autoenum/aggr_scan/raw/xml_out" ]]; do
             sleep 1
@@ -371,12 +371,12 @@ aggr() {
 
         # Try XML parsing first, fall back to text if it fails
         if searchsploit -j --nmap "$IP/autoenum/aggr_scan/raw/xml_out" > "$loot/exploits/aggr_searchsploit_nmap.json" 2>/dev/null; then
-            searchsploit --nmap "$IP/autoenum/aggr_scan/raw/xml_out" > "$loot/exploits/aggr_searchsploit_nmap"
+            searchsploit --nmap "$IP/autoenum/aggr_scan/raw/xml_out" > "$loot/exploits/aggr_searchsploit_nmap" 2>/dev/null || true
         else
             echo -e "${RED}[-] XML parsing failed. Falling back to text-based exploit matching.${NO_COLOR}"
             grep -Eo "([0-9]{1,5}/tcp|udp).*open" "$IP/autoenum/aggr_scan/raw/full_scan" | \
             while read -r service; do
-                searchsploit "$(echo "$service" | awk '{print $3}')" | grep -v "No Results" >> "$loot/exploits/aggr_searchsploit_nmap"
+                searchsploit "$(echo "$service" | awk '{print $3}')" | grep -v "No Results" >> "$loot/exploits/aggr_searchsploit_nmap" 2>/dev/null || true
             done
         fi
     ) &
@@ -461,22 +461,22 @@ top_1k() {
     # 2. Validate XML before SearchSploit
     if [[ -s "$t1k/raw/xml_out" ]] && grep -q "<nmaprun" "$t1k/raw/xml_out"; then
         echo -e "${YELLOW}[+] Running SearchSploit (XML mode)${NO_COLOR}"
-        searchsploit -j --nmap "$t1k/raw/xml_out" > "$loot/exploits/top_1k_searchsploit_nmap.json" 2>&1
-        searchsploit --nmap "$t1k/raw/xml_out" > "$loot/exploits/top_1k_searchsploit_nmap"
+        searchsploit -j --nmap "$t1k/raw/xml_out" > "$loot/exploits/top_1k_searchsploit_nmap.json" 2>/dev/null || true
+        searchsploit --nmap "$t1k/raw/xml_out" > "$loot/exploits/top_1k_searchsploit_nmap" 2>/dev/null || true
 
         # Fallback if XML parsing fails
         if grep -q "parser error" "$loot/exploits/top_1k_searchsploit_nmap.json"; then
             echo -e "${RED}[-] XML parsing failed, switching to text mode${NO_COLOR}"
-            searchsploit --nmap "$t1k/ports_and_services/services" > "$loot/exploits/top_1k_searchsploit_nmap"
+            searchsploit --nmap "$t1k/ports_and_services/services" > "$loot/exploits/top_1k_searchsploit_nmap" 2>/dev/null || true
         fi
     else
         echo -e "${RED}[-] Invalid XML, using text output${NO_COLOR}"
-        searchsploit --nmap "$t1k/ports_and_services/services" > "$loot/exploits/top_1k_searchsploit_nmap"
+        searchsploit --nmap "$t1k/ports_and_services/services" > "$loot/exploits/top_1k_searchsploit_nmap" 2>/dev/null || true
     fi
 
     # 3. Process services
     awk -F'/' '/open.*http/ {print $1}' "$t1k/ports_and_services/services" | sort -u > "$loot/raw/http_found"
-    
+
     services=("smb" "snmp" "ftp" "ldap" "smtp" "imap" "pop3" "oracle" "redis" "rpc" "dns")
     for service in "${services[@]}"; do
         grep "$service" "$t1k/ports_and_services/services" | sort -u > "$loot/raw/${service}_found"
@@ -530,8 +530,8 @@ top_10k() {
         # SearchSploit processing
         if [[ -s "$scan_dir/raw/xml_out" ]]; then
             echo -e "${CYAN}[+] Running SearchSploit analysis${NO_COLOR}"
-            searchsploit -j --nmap "$scan_dir/raw/xml_out" > "$loot/exploits/top_10k_searchsploit_nmap.json"
-            searchsploit --nmap "$scan_dir/raw/xml_out" > "$loot/exploits/top_10k_searchsploit_nmap"
+            searchsploit -j --nmap "$scan_dir/raw/xml_out" > "$loot/exploits/top_10k_searchsploit_nmap.json" 2>/dev/null || true
+            searchsploit --nmap "$scan_dir/raw/xml_out" > "$loot/exploits/top_10k_searchsploit_nmap" 2>/dev/null || true
         else
             echo -e "${RED}[-] XML output missing or empty - skipping SearchSploit${NO_COLOR}"
         fi
@@ -541,8 +541,8 @@ top_10k() {
 
         # Service-specific files
         local services=(
-            "smb" "snmp" "ftp" "ldap" 
-            "smtp" "oracle" "pop3" "imap" 
+            "smb" "snmp" "ftp" "ldap"
+            "smtp" "oracle" "pop3" "imap"
             "redis" "dns" "rpc"
         )
 
@@ -551,7 +551,7 @@ top_10k() {
 
         # Process other services
         for service in "${services[@]}"; do
-            awk -F'/' '/open/ && /'"$service"'/ {print $1}' "$scan_dir/ports_and_services/services" | 
+            awk -F'/' '/open/ && /'"$service"'/ {print $1}' "$scan_dir/ports_and_services/services" |
             sort -u > "$loot/raw/${service}_found"
         done
 
@@ -573,13 +573,13 @@ udp() {
     banner
     _ensure_loot || return 1
     OS_guess
-    
+
     # Directory setup
     mkdir -p "$IP/autoenum/udp/"{raw,ports_and_services} "$loot/raw"
     udp_dir="$IP/autoenum/udp"
-    
+
     echo -e "${YELLOW}[+] Starting UDP scan (Top 100 ports)${NO_COLOR}"
-    
+
     # Scan top 100 UDP ports with version detection
     nmap -sU -sV --top-ports 100 \
         --min-rate 500 \
@@ -589,21 +589,21 @@ udp() {
         -T4 "$IP" \
         -oN "$udp_dir/scan" \
         -oX "$udp_dir/raw/xml_out" > /dev/null 2>&1
-    
+
     # Extract open ports
     grep "open/udp" "$udp_dir/scan" | awk '{print $1}' | cut -d'/' -f1 > "$udp_dir/ports_and_services/open_ports"
-    
+
     # Service-specific processing
     if [[ -s "$udp_dir/ports_and_services/open_ports" ]]; then
         echo -e "${GREEN}[+] Found open UDP ports: $(tr '\n' ' ' < "$udp_dir/ports_and_services/open_ports")${NO_COLOR}"
         _print_port_summary "$udp_dir/scan"
-        
+
         # Common UDP services check
         services=("snmp" "ntp" "dns" "dhcp" "tftp")
         for service in "${services[@]}"; do
             grep -i "$service" "$udp_dir/scan" | sort -u > "$loot/raw/udp_${service}_found"
         done
-        
+
         # Special checks for SNMP
         if grep -q "161/udp" "$udp_dir/ports_and_services/open_ports"; then
             echo -e "${YELLOW}[+] Running SNMP checks...${NO_COLOR}"
@@ -613,7 +613,7 @@ udp() {
     else
         echo -e "${RED}[-] No open UDP ports found${NO_COLOR}"
     fi
-    
+
     echo -e "${GREEN}[+] UDP scan completed${NO_COLOR}"
 }
 

@@ -55,74 +55,85 @@ menu (){
                 if [[ "$IP" == "dev" ]]; then
                     echo "[-] set an IP. use set target to do this"
                 else
-                    ping "$IP" -c 1; echo -e
+                    ping "$IP" -c 1 2>/dev/null || echo -e "[-] No ping response (ICMP may be blocked)"; echo -e
                 fi
                 ;;
             "udp")
                 echo "[~] SCAN MODE: udp"; sleep 2; echo -e
                 mkbasedirs
-                udp
+                udp || true
+                echo -e "${GREEN}[+] Scan complete. Returning to menu...${NO_COLOR}"
                 ;;
             "vuln")
                 echo "[~] SCAN MODE: vuln"; sleep 2; echo -e
                 mkbasedirs
-                vuln
+                vuln || true
+                echo -e "${GREEN}[+] Scan complete. Returning to menu...${NO_COLOR}"
                 ;;
             "aggr")
                 echo "[~] SCAN MODE: aggr"; sleep 2; echo -e
                 mkbasedirs
-                aggr
-                cleanup
+                aggr || true
+                cleanup || true
+                echo -e "${GREEN}[+] Scan complete. Returning to menu...${NO_COLOR}"
                 ;;
             "reg")
                 echo "[~] SCAN MODE: reg"; sleep 2; echo -e
                 mkbasedirs
-                reg
-                cleanup
+                reg || true
+                cleanup || true
+                echo -e "${GREEN}[+] Scan complete. Returning to menu...${NO_COLOR}"
                 ;;
             "quick")
                 echo "[~] SCAN MODE: quick"; sleep 2; echo -e
-                nmap -sC -sV -T4 -Pn "$IP"
+                nmap -sC -sV -T4 -Pn "$IP" 2>/dev/null || true
+                echo -e "${GREEN}[+] Scan complete. Returning to menu...${NO_COLOR}"
                 ;;
             "top 1k"|"top1k")
                 echo "[~] SCAN MODE: top 1k"; sleep 2; echo -e
                 mkbasedirs
-                top_1k
-                cleanup
+                top_1k || true
+                cleanup || true
+                echo -e "${GREEN}[+] Scan complete. Returning to menu...${NO_COLOR}"
                 ;;
             "top 10k"|"top10k")
                 echo "[~] SCAN MODE: top 10k"; sleep 2; echo -e
                 mkbasedirs
-                top_10k
-                cleanup
+                top_10k || true
+                cleanup || true
+                echo -e "${GREEN}[+] Scan complete. Returning to menu...${NO_COLOR}"
                 ;;
             "top 1k+vuln"|"top1k+vuln")
                 echo "[~] SCAN MODE: top 1k+vuln"; sleep 2; echo -e
                 mkbasedirs
-                top_1k
-                vuln
-                cleanup
+                top_1k || true
+                vuln || true
+                cleanup || true
+                echo -e "${GREEN}[+] Scan complete. Returning to menu...${NO_COLOR}"
                 ;;
             "top 10k+vuln"|"top10k+vuln")
                 echo "[~] SCAN MODE: top 10k+vuln"; sleep 2; echo -e
                 mkbasedirs
-                top_10k
-                vuln
-                cleanup
+                top_10k || true
+                vuln || true
+                cleanup || true
+                echo -e "${GREEN}[+] Scan complete. Returning to menu...${NO_COLOR}"
                 ;;
             "aggr+vuln")
                 echo "[~] SCAN MODE: aggr+vuln"; sleep 2; echo -e
                 mkbasedirs
-                aggr
-                vuln
-                cleanup
+                aggr || true
+                vuln || true
+                cleanup || true
+                echo -e "${GREEN}[+] Scan complete. Returning to menu...${NO_COLOR}"
                 ;;
             "reg+vuln")
                 echo "[~] SCAN MODE: reg+vuln"; sleep 2; echo -e
                 mkbasedirs
-                reg
-                vuln
-                cleanup
+                reg || true
+                vuln || true
+                cleanup || true
+                echo -e "${GREEN}[+] Scan complete. Returning to menu...${NO_COLOR}"
                 ;;
             "help")
                 halp_meh_pws
