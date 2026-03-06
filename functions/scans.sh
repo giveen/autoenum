@@ -29,10 +29,12 @@ OS_guess() {
     # Simple TTL-based detection
     if [[ "$ttl" =~ ^(127|128)$ ]]; then
         echo -e "${GREEN}[+] This machine is probably running Windows (TTL: $ttl)${NO_COLOR}"
+        [[ -n "${loot:-}" ]] && echo "windows_ttl" > "$loot/raw/windows_found"
     elif [[ "$ttl" =~ ^(255|254)$ ]]; then
         echo -e "${GREEN}[+] This machine is probably running Cisco/Solaris/OpenBSD (TTL: $ttl)${NO_COLOR}"
     elif [[ "$ttl" =~ ^(63|64)$ ]]; then
         echo -e "${GREEN}[+] This machine is probably running Linux (TTL: $ttl)${NO_COLOR}"
+        [[ -n "${loot:-}" ]] && echo "linux_ttl" > "$loot/raw/linux_found"
     else
         if [[ -n "$ttl" ]]; then
             echo -e "${YELLOW}[-] Unknown TTL value: $ttl${NO_COLOR}"
@@ -55,6 +57,34 @@ _ensure_loot() {
         echo -e "${YELLOW}[*] loot not set — defaulting to $loot${NO_COLOR}"
     fi
     mkdir -p "$loot/raw" "$loot/exploits"
+}
+
+# Check a services file for Windows-specific ports/OS and write the windows_found tag.
+# Requires >= 2 common Windows ports open OR nmap OS detection confirming Windows.
+# Usage: _tag_os_from_scan <services_file> [os_detection_file]
+_tag_os_from_scan() {
+    local services_file="${1:-}"
+    local os_file="${2:-}"
+    [[ -z "${loot:-}" ]] && return 0
+    [[ ! -s "${services_file:-}" ]] && return 0
+
+    local win_ports=(135 139 445 3389 5985 5986 593 88)
+    local win_port_count=0
+    for port in "${win_ports[@]}"; do
+        if grep -q "^${port}/" "$services_file" 2>/dev/null; then
+            win_port_count=$(( win_port_count + 1 ))
+        fi
+    done
+
+    local os_says_windows=0
+    if [[ -s "${os_file:-}" ]] && grep -qi "windows" "$os_file" 2>/dev/null; then
+        os_says_windows=1
+    fi
+
+    if (( win_port_count >= 2 )) || (( os_says_windows )); then
+        echo -e "${GREEN}[+] Windows target confirmed (${win_port_count} Windows ports) — enabling windows_enum${NO_COLOR}"
+        echo "windows_confirmed" > "$loot/raw/windows_found"
+    fi
 }
 
 enum_goto() {
@@ -133,8 +163,8 @@ enum_goto() {
 
 reg() {
     banner
-    OS_guess
     _ensure_loot || return 1
+    OS_guess
 
     # Directory setup
     local scan_dir="$IP/autoenum/reg_scan"
@@ -203,6 +233,9 @@ reg() {
 
         # Clean HTTP ports extraction
         awk -F'/' '/open.*http/ {print $1}' "$scan_dir/ports_and_services/services_running" | sort -u > "$loot/raw/http_found"
+
+        # Tag Windows OS from port/OS-based detection
+        _tag_os_from_scan "$scan_dir/ports_and_services/services_running" "$scan_dir/ports_and_services/OS_detection"
     }
 
     process_scans
@@ -213,8 +246,8 @@ reg() {
 aggr() {
     local timeout="${1:-300}"
     banner
-    OS_guess
     _ensure_loot || return 1
+    OS_guess
 
     # Directory setup
     mkdir -p "$IP/autoenum/aggr_scan/"{raw,ports_and_services} "$loot/raw" "$loot/exploits"
@@ -306,13 +339,16 @@ aggr() {
     # Kill progress loop
     kill "$_progress_pid" 2>/dev/null || true
 
+    # Tag Windows OS from port-based detection
+    _tag_os_from_scan "$IP/autoenum/aggr_scan/ports_and_services/services_running"
+
     enum_goto "$timeout"
 }
 
 top_1k() {
     banner
-    OS_guess
     _ensure_loot || return 1
+    OS_guess
 
     # Directory setup
     mkdir -p "$IP/autoenum/top_1k/"{raw,ports_and_services} "$loot/raw" "$loot/exploits"
@@ -361,6 +397,9 @@ top_1k() {
         grep "$service" "$t1k/ports_and_services/services" | sort -u > "$loot/raw/${service}_found"
     done
 
+    # Tag Windows OS from port-based detection
+    _tag_os_from_scan "$t1k/ports_and_services/services"
+
     # Kill progress loop
     kill "$_progress_pid" 2>/dev/null || true
 
@@ -369,8 +408,8 @@ top_1k() {
 
 top_10k() {
     banner
-    OS_guess
     _ensure_loot || return 1
+    OS_guess
 
     # Directory setup
     local scan_dir="$IP/autoenum/top_10k"
@@ -432,6 +471,9 @@ top_10k() {
 
         # Cleanup empty files
         find "$loot/raw" -type f -empty -delete 2>/dev/null
+
+        # Tag Windows OS from port-based detection
+        _tag_os_from_scan "$scan_dir/ports_and_services/services"
         echo -e "${GREEN}[+] Scan results processed and saved${NO_COLOR}"
     }
 
@@ -442,8 +484,8 @@ top_10k() {
 
 udp() {
     banner
-    OS_guess
     _ensure_loot || return 1
+    OS_guess
     
     # Directory setup
     mkdir -p "$IP/autoenum/udp/"{raw,ports_and_services} "$loot/raw"

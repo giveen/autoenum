@@ -27,6 +27,7 @@ declare -a REQUIRED_TOOLS=(
     "wget"
     "python3"
     "pip3"
+    "nxc"
 )
 
 # === Data packages checked by directory/file presence rather than command -v ===
