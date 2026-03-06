@@ -354,6 +354,7 @@ reg() {
     # Directory setup
     local scan_dir="$IP/autoenum/reg_scan"
     mkdir -p "$scan_dir/"{raw,ports_and_services} "$loot/raw" "$loot/exploits"
+    rm -f "$loot/raw/"*_found 2>/dev/null || true  # clear stale service tags from prior run
 
     # Progress feedback
     (
@@ -439,6 +440,7 @@ aggr() {
 
     # Directory setup
     mkdir -p "$IP/autoenum/aggr_scan/"{raw,ports_and_services} "$loot/raw" "$loot/exploits"
+    rm -f "$loot/raw/"*_found 2>/dev/null || true  # clear stale service tags from prior run
 
     # Progress feedback
     (
@@ -540,6 +542,7 @@ top_1k() {
 
     # Directory setup
     mkdir -p "$IP/autoenum/top_1k/"{raw,ports_and_services} "$loot/raw" "$loot/exploits"
+    rm -f "$loot/raw/"*_found 2>/dev/null || true  # clear stale service tags from prior run
     t1k="$IP/autoenum/top_1k"
 
     # Progress feedback
@@ -592,6 +595,7 @@ top_10k() {
     # Directory setup
     local scan_dir="$IP/autoenum/top_10k"
     mkdir -p "$scan_dir/"{raw,ports_and_services} "$loot/raw" "$loot/exploits"
+    rm -f "$loot/raw/"*_found 2>/dev/null || true  # clear stale service tags from prior run
 
     # Progress feedback
     (
@@ -663,6 +667,7 @@ udp() {
 
     # Directory setup
     mkdir -p "$IP/autoenum/udp/"{raw,ports_and_services} "$loot/raw"
+    rm -f "$loot/raw/"*_found 2>/dev/null || true  # clear stale service tags from prior run
     udp_dir="$IP/autoenum/udp"
 
     echo -e "${YELLOW}[+] Starting UDP scan (Top 100 ports)${NO_COLOR}"
