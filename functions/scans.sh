@@ -116,7 +116,7 @@ _print_port_summary() {
     echo -e "${BOLD}${GREEN}  └───────────────────────────────────────────────────────${NO_COLOR}"
 }
 
-# Run searchsploit --nmap on an XML file, save results to loot, and print to screen.
+# Run searchsploit --nmap on an XML file in a dedicated tmux window.
 # Usage: _run_searchsploit <xml_file> <label> <out_txt> <out_json>
 _run_searchsploit() {
     local xml="$1" label="$2" out_txt="$3" out_json="$4"
@@ -124,12 +124,44 @@ _run_searchsploit() {
         echo -e "${YELLOW}[-] SearchSploit: no XML output to analyse (${label})${NO_COLOR}"
         return 0
     fi
-    echo -e "${CYAN}[+] Running SearchSploit on ${label} results...${NO_COLOR}"
-    # Capture stdout+stderr so [i]/[-] info lines are preserved in the file and on screen
-    searchsploit -j --nmap "$xml" > "$out_json" 2>/dev/null || true
-    searchsploit --nmap "$xml" > "$out_txt" 2>&1 || true
-    cat "$out_txt"
-    echo -e "${CYAN}[+] SearchSploit results saved: ${out_txt}${NO_COLOR}"
+
+    # Derive a short tmux-safe window name from the label (e.g. "reg scan" -> "ssp_reg")
+    local _win_name
+    _win_name="ssp_$(echo "$label" | awk '{print $1}' | tr -cd '[:alnum:]_')"
+
+    local _script
+    _script=$(mktemp /tmp/ae-XXXX.sh)
+    cat > "$_script" << ENDSCRIPT
+#!/bin/bash
+set +euo pipefail
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NO_COLOR='\033[0m'
+
+echo -e "\${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${NO_COLOR}"
+echo -e "\${BOLD}\${CYAN}  SearchSploit  •  $label  •  $IP\${NO_COLOR}"
+echo -e "\${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${NO_COLOR}"
+echo ""
+
+searchsploit -j --nmap '$xml' > '$out_json' 2>/dev/null || true
+searchsploit --nmap '$xml' > '$out_txt' 2>&1 || true
+cat '$out_txt'
+
+echo ""
+echo -e "\${CYAN}[+] Saved: $out_txt\${NO_COLOR}"
+echo -e "\${CYAN}━━━  SearchSploit done  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${NO_COLOR}"
+echo -e "\${CYAN}  Window stays open — close with: prefix+& or exit\${NO_COLOR}"
+exec \$SHELL
+ENDSCRIPT
+
+    chmod +x "$_script"
+    # Kill any prior window with this name before opening a fresh one
+    tmux kill-window -t "${AUTOENUM_SESSION:-autoenum}:${_win_name}" 2>/dev/null || true
+    tmux new-window -d -n "$_win_name" -- bash "$_script"
+    echo -e "${CYAN}[+] SearchSploit (${label}) running in tmux window '${_win_name}'${NO_COLOR}"
 }
 
 
@@ -197,6 +229,7 @@ enum_goto() {
         redis_enum snmp_enum rpc_enum pop3_enum imap_enum dns_enum
         ftp_enum ldap_enum smtp_enum oracle_enum smb_enum http_enum
         windows_enum linux_enum
+        ssp_reg ssp_aggr ssp_top
     )
     for _w in "${_all_enum_windows[@]}"; do
         tmux kill-window -t "${AUTOENUM_SESSION:-autoenum}:${_w}" 2>/dev/null || true

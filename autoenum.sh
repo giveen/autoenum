@@ -37,6 +37,7 @@ _kill_enum_windows() {
         redis_enum snmp_enum rpc_enum pop3_enum imap_enum dns_enum
         ftp_enum ldap_enum smtp_enum oracle_enum smb_enum http_enum
         windows_enum linux_enum
+        ssp_reg ssp_aggr ssp_top
     )
     local _sess="${AUTOENUM_SESSION:-autoenum}"
     for _w in "${_all[@]}"; do
