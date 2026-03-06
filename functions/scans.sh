@@ -42,11 +42,27 @@ OS_guess() {
     fi
 }
 
+# Ensures $loot is set and the base directories exist.
+# Called at the top of every function that uses $loot so they are safe
+# whether invoked via the menu (where mkbasedirs already ran) or directly.
+_ensure_loot() {
+    if [[ -z "${loot:-}" ]]; then
+        if [[ -z "${IP:-}" ]]; then
+            echo -e "${RED}[-] \$IP is not set — cannot initialise loot directory.${NO_COLOR}" >&2
+            return 1
+        fi
+        loot="$IP/autoenum/loot"
+        echo -e "${YELLOW}[*] loot not set — defaulting to $loot${NO_COLOR}"
+    fi
+    mkdir -p "$loot/raw" "$loot/exploits"
+}
+
 enum_goto() {
     # Configuration
     local MAX_PARALLEL=4  # Optimal for most systems
     local running=0
     local timeout="${1:-300}"
+    _ensure_loot || return 1
 
     # Service mapping array (service_file:enum_function)
     local services=(
@@ -118,6 +134,7 @@ enum_goto() {
 reg() {
     banner
     OS_guess
+    _ensure_loot || return 1
 
     # Directory setup
     local scan_dir="$IP/autoenum/reg_scan"
@@ -197,6 +214,7 @@ aggr() {
     local timeout="${1:-300}"
     banner
     OS_guess
+    _ensure_loot || return 1
 
     # Directory setup
     mkdir -p "$IP/autoenum/aggr_scan/"{raw,ports_and_services} "$loot/raw" "$loot/exploits"
@@ -294,6 +312,7 @@ aggr() {
 top_1k() {
     banner
     OS_guess
+    _ensure_loot || return 1
 
     # Directory setup
     mkdir -p "$IP/autoenum/top_1k/"{raw,ports_and_services} "$loot/raw" "$loot/exploits"
@@ -351,6 +370,7 @@ top_1k() {
 top_10k() {
     banner
     OS_guess
+    _ensure_loot || return 1
 
     # Directory setup
     local scan_dir="$IP/autoenum/top_10k"
@@ -423,6 +443,7 @@ top_10k() {
 udp() {
     banner
     OS_guess
+    _ensure_loot || return 1
     
     # Directory setup
     mkdir -p "$IP/autoenum/udp/"{raw,ports_and_services} "$loot/raw"
@@ -467,6 +488,7 @@ udp() {
 }
 
 vuln() {
+    _ensure_loot || return 1
     mkdir -p "$loot/exploits/vulns"
     vulns="$loot/exploits/vulns"
     cwd=$(pwd)
