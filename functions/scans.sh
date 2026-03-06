@@ -192,6 +192,16 @@ enum_goto() {
     local timeout="${1:-300}"
     _ensure_loot || return 1
 
+    # ── Close any leftover enum windows from a previous run ───────────────────
+    local _all_enum_windows=(
+        redis_enum snmp_enum rpc_enum pop3_enum imap_enum dns_enum
+        ftp_enum ldap_enum smtp_enum oracle_enum smb_enum http_enum
+        windows_enum linux_enum
+    )
+    for _w in "${_all_enum_windows[@]}"; do
+        tmux kill-window -t "${AUTOENUM_SESSION:-autoenum}:${_w}" 2>/dev/null || true
+    done
+
     # Service mapping array (service_file:enum_function)
     local services=(
         "redis:redis_enum"
