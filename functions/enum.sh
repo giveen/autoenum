@@ -834,49 +834,72 @@ linux_enum() {
     fi
     echo -e "${GREEN}[+] Linux target confirmed — proceeding${NO_COLOR}"
 
-    # === SSH enumeration ===
-    (
-        echo -e "${YELLOW}[+] Running SSH enumeration scripts${NO_COLOR}"
-        timeout "$timeout" nmap -p 22,2222 -sV \
-            --script "ssh-auth-methods,ssh-hostkey,ssh2-enum-algos" \
-            "$IP" > "$loot/linux/nmap_ssh" 2>/dev/null || {
-            echo -e "${RED}[-] nmap SSH scripts failed${NO_COLOR}"
-        }
-        echo "nmap -p 22,2222 -sV --script ssh-auth-methods,ssh-hostkey,ssh2-enum-algos $IP" >> "$loot/linux/cmds_run"
-    ) &
+    # === Determine best available services file for port-gating ===
+    local _svc_file=""
+    local _candidate
+    for _candidate in \
+        "$IP/autoenum/reg_scan/ports_and_services/services_running" \
+        "$IP/autoenum/aggr_scan/ports_and_services/services_running" \
+        "$IP/autoenum/top_1k/ports_and_services/services" \
+        "$IP/autoenum/top_10k/ports_and_services/services"; do
+        [[ -s "$_candidate" ]] && { _svc_file="$_candidate"; break; }
+    done
 
-    # === NFS enumeration ===
-    (
-        echo -e "${YELLOW}[+] Checking for NFS exports${NO_COLOR}"
-        timeout 30 showmount -e "$IP" 2>/dev/null \
-            > "$loot/linux/nfs_showmount" 2>/dev/null || {
-            echo -e "${YELLOW}[-] showmount failed (NFS may not be exposed)${NO_COLOR}"
-        }
-        echo "showmount -e $IP" >> "$loot/linux/cmds_run"
+    _port_open() {
+        local pat="$1"
+        [[ -z "$_svc_file" ]] && return 1
+        grep -qE "$pat" "$_svc_file" 2>/dev/null
+    }
 
-        timeout "$timeout" nmap -p 111,2049 -sV \
-            --script "nfs-ls,nfs-statfs,nfs-showmount,rpcinfo" \
-            "$IP" > "$loot/linux/nmap_nfs" 2>/dev/null || {
-            echo -e "${RED}[-] nmap NFS scripts failed${NO_COLOR}"
-        }
-        echo "nmap -p 111,2049 -sV --script nfs-ls,nfs-statfs,nfs-showmount,rpcinfo $IP" >> "$loot/linux/cmds_run"
-    ) &
+    # === SSH enumeration (only if SSH port found open) ===
+    if _port_open "^22/|^2222/"; then
+        (
+            echo -e "${YELLOW}[+] Running SSH enumeration scripts${NO_COLOR}"
+            timeout "$timeout" nmap -p 22,2222 -sV \
+                --script "ssh-auth-methods,ssh-hostkey,ssh2-enum-algos" \
+                "$IP" > "$loot/linux/nmap_ssh" 2>/dev/null || {
+                echo -e "${RED}[-] nmap SSH scripts failed${NO_COLOR}"
+            }
+            echo "nmap -p 22,2222 -sV --script ssh-auth-methods,ssh-hostkey,ssh2-enum-algos $IP" >> "$loot/linux/cmds_run"
+        ) &
+    fi
 
-    # === Rsync anonymous module listing ===
-    (
-        echo -e "${YELLOW}[+] Checking for Rsync anonymous access${NO_COLOR}"
-        timeout 15 rsync --list-only rsync://"$IP"/ 2>/dev/null \
-            > "$loot/linux/rsync_modules" 2>/dev/null || {
-            echo -e "${YELLOW}[-] rsync anonymous listing failed (service may not be running)${NO_COLOR}"
-        }
-        echo "rsync --list-only rsync://$IP/" >> "$loot/linux/cmds_run"
+    # === NFS enumeration (only if 111 or 2049 found open) ===
+    if _port_open "^111/|^2049/"; then
+        (
+            echo -e "${YELLOW}[+] Checking for NFS exports${NO_COLOR}"
+            timeout 30 showmount -e "$IP" 2>/dev/null \
+                > "$loot/linux/nfs_showmount" 2>/dev/null || {
+                echo -e "${YELLOW}[-] showmount failed (NFS may not be exposed)${NO_COLOR}"
+            }
+            echo "showmount -e $IP" >> "$loot/linux/cmds_run"
 
-        timeout "$timeout" nmap -p 873 --script rsync-list-modules \
-            "$IP" > "$loot/linux/nmap_rsync" 2>/dev/null || {
-            echo -e "${RED}[-] nmap rsync scripts failed${NO_COLOR}"
-        }
-        echo "nmap -p 873 --script rsync-list-modules $IP" >> "$loot/linux/cmds_run"
-    ) &
+            timeout "$timeout" nmap -p 111,2049 -sV \
+                --script "nfs-ls,nfs-statfs,nfs-showmount,rpcinfo" \
+                "$IP" > "$loot/linux/nmap_nfs" 2>/dev/null || {
+                echo -e "${RED}[-] nmap NFS scripts failed${NO_COLOR}"
+            }
+            echo "nmap -p 111,2049 -sV --script nfs-ls,nfs-statfs,nfs-showmount,rpcinfo $IP" >> "$loot/linux/cmds_run"
+        ) &
+    fi
+
+    # === Rsync anonymous module listing (only if 873 found open) ===
+    if _port_open "^873/"; then
+        (
+            echo -e "${YELLOW}[+] Checking for Rsync anonymous access${NO_COLOR}"
+            timeout 15 rsync --list-only rsync://"$IP"/ 2>/dev/null \
+                > "$loot/linux/rsync_modules" 2>/dev/null || {
+                echo -e "${YELLOW}[-] rsync anonymous listing failed (service may not be running)${NO_COLOR}"
+            }
+            echo "rsync --list-only rsync://$IP/" >> "$loot/linux/cmds_run"
+
+            timeout "$timeout" nmap -p 873 --script rsync-list-modules \
+                "$IP" > "$loot/linux/nmap_rsync" 2>/dev/null || {
+                echo -e "${RED}[-] nmap rsync scripts failed${NO_COLOR}"
+            }
+            echo "nmap -p 873 --script rsync-list-modules $IP" >> "$loot/linux/cmds_run"
+        ) &
+    fi
 
     wait
 
