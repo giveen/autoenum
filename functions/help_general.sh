@@ -11,6 +11,11 @@ get_ip (){
         echo -e
         echo "Enter a target IP or hostname "
         tput bold;tput setaf 1; echo -en "Autoenum > ";tput sgr0;read -r unchecked_IP
+        # Allow exit/quit at the IP prompt
+        if [[ "${unchecked_IP,,}" =~ ^(exit|quit|q)$ ]]; then
+                echo -e "[+] Exiting."
+                exit 0
+        fi
         if [[ $unchecked_IP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
                 IP="$unchecked_IP"
                 # Ping is best-effort only — many targets (HTB, firewalled hosts) block ICMP
