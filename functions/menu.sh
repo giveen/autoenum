@@ -130,14 +130,13 @@ menu (){
             "set target")
                 echo -en "Enter IP/hostname > "; read -r unchecked_IP
                 if [[ $unchecked_IP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-                    local cwd; cwd=$(pwd)
-                    ping -c 1 "$unchecked_IP" | head -n2 | tail -n1 > "$cwd/tmp"
-                    if ! grep -q "64 bytes" "$cwd/tmp"; then
-                        echo "[-] IP failed to resolve"
+                    IP="$unchecked_IP"
+                    if ping -c 1 -W 2 "$IP" > /dev/null 2>&1; then
+                        tput setaf 2; echo -e "[+] $IP is reachable (ICMP)"; tput sgr0
                     else
-                        IP="$unchecked_IP"; tput setaf 4; echo -e "[+] IP set to $IP"; tput sgr0; echo -e
+                        tput setaf 3; echo -e "[*] $IP did not respond to ping — continuing anyway (ICMP may be blocked)"; tput sgr0
                     fi
-                    rm -f "$cwd/tmp"
+                    tput setaf 4; echo -e "[+] IP set to $IP"; tput sgr0; echo -e
                 # Broad hostname match: anything with a dot that has at least one letter
                 # Covers dc01.corp.local, box.hackthebox.eu, target.internal, etc.
                 elif [[ $unchecked_IP =~ [a-zA-Z] ]] && [[ $unchecked_IP =~ \. ]]; then

@@ -10,33 +10,38 @@ cleanup (){
 get_ip (){
         echo -e
         echo "Enter a target IP or hostname "
-        tput bold;tput setaf 1; echo -en "Autoenum > ";tput sgr0;read unchecked_IP
-        if [[ -n "${NO_RESOLVE:-}" ]]; then
-                if [[ $unchecked_IP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]];then
-                        IP="$unchecked_IP";sleep 1
-                        tput setaf 4;echo -e "[+] IP set to $IP";tput sgr0;echo -e
-                fi
-        else
-                if [[ $unchecked_IP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]];then
-                        IP="$unchecked_IP";sleep 1
-                        cwd=$(pwd);ping -c 1 -W 3 "$IP" | head -n2 | tail -n1 > "$cwd/tmp"
-                        if ! grep -q "64 bytes" "$cwd/tmp";then
-                                echo -e "[-] IP failed to resolve\n[-] Exiting..."
-                                rm -f "$cwd/tmp"
-                                exit
-                        fi
-                        rm -f "$cwd/tmp"
-                        tput setaf 4;echo -e "[+] IP set to $IP";tput sgr0;echo -e
-                elif [[ $unchecked_IP =~ [a-zA-Z0-9]\.[a-z]$ ]] || [[ $unchecked_IP =~ [a-z]\.[a-zA-Z0-9]\.[a-z]$ ]];then
-                        IP=$(host "$unchecked_IP" | head -n1 | awk '{print($4)}')
-                        tput setaf 4;echo -e "$unchecked_IP resolved to $IP\n";tput sgr0
+        tput bold;tput setaf 1; echo -en "Autoenum > ";tput sgr0;read -r unchecked_IP
+        if [[ $unchecked_IP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                IP="$unchecked_IP"
+                # Ping is best-effort only — many targets (HTB, firewalled hosts) block ICMP
+                if ping -c 1 -W 2 "$IP" > /dev/null 2>&1; then
+                        tput setaf 2; echo -e "[+] $IP is reachable (ICMP)"; tput sgr0
                 else
-                        tput setaf 8
-                        echo "[-] Invalid IP or hostname detected."
-                        echo -e "[-] Example:\n\t[>] 192.168.1.5\n\t[>] google.com"
-                        tput sgr0
+                        tput setaf 3; echo -e "[*] $IP did not respond to ping — continuing anyway (ICMP may be blocked)"; tput sgr0
+                fi
+                tput setaf 4; echo -e "[+] IP set to $IP"; tput sgr0; echo -e
+        elif [[ -n "${NO_RESOLVE:-}" ]]; then
+                tput setaf 8
+                echo "[-] --no-resolve set but input is not a valid IP address."
+                echo -e "[-] Example: 192.168.1.5"
+                tput sgr0
+                get_ip
+        elif [[ $unchecked_IP =~ [a-zA-Z] ]] && [[ $unchecked_IP =~ \. ]]; then
+                local resolved
+                resolved=$(host "$unchecked_IP" 2>/dev/null | awk '/has address/{print $4; exit}')
+                if [[ -n "$resolved" ]]; then
+                        IP="$resolved"
+                        tput setaf 4; echo -e "[+] $unchecked_IP resolved to $IP"; tput sgr0; echo -e
+                else
+                        tput setaf 1; echo -e "[-] Could not resolve hostname: $unchecked_IP"; tput sgr0
                         get_ip
                 fi
+        else
+                tput setaf 8
+                echo "[-] Invalid IP or hostname."
+                echo -e "[-] Examples:\n\t[>] 10.10.10.1\n\t[>] target.htb"
+                tput sgr0
+                get_ip
         fi
 }
 
