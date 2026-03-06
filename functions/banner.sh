@@ -16,7 +16,7 @@ banner() {
     # Print ASCII banner with color
     echo -e "${CYAN}                   --                                        ${NO_COLOR}"
     echo -e "${BLUE}    ____ _ __  __ / /_ ____   ___   ____   __  __ ____ ___   ${NO_COLOR}"
-    echo -e "${BLUE}   / __ `// / / // __// __ \ / _ \ / __ \ / / / // __ `__ \  ${NO_COLOR}"
+    echo -e "${BLUE}   / __ \`// / / // __// __ \ / _ \ / __ \ / / / // __ \`__ \  ${NO_COLOR}"
     echo -e "${BLUE}  / /_/ // /_/ // /_ / /_/ //  __// / / // /_/ // / / / / /  ${NO_COLOR}"
     echo -e "${BLUE}  \__,_/ \__,_/ \__/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/   ${NO_COLOR}"
     echo -e "${CYAN}                                                             ${NO_COLOR}"

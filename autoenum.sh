@@ -96,7 +96,7 @@ source "$DIR/functions/menu.sh"
 # === START ===
 clear
 banner
-if [[ -n "$NO_RESOLVE" ]]; then
+if [[ -n "${NO_RESOLVE:-}" ]]; then
     tput setaf 2
     echo -en "\n[*] Autoenum set to noresolve mode"
     tput sgr0
