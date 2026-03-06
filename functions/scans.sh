@@ -4,7 +4,9 @@
 # Author: giveen
 # GitHub: https://github.com/giveen/autoenum
 
-set -euo pipefail
+# NOTE: No set -euo pipefail here — this is a sourced library.
+# Shell options are set by the calling script (autoenum.sh) or disabled
+# in generated tmux window scripts.
 
 # === COLORS ===
 RED='\033[0;31m'

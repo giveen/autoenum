@@ -4,7 +4,9 @@
 # Author: giveen
 # GitHub: https://github.com/giveen/autoenum
 
-set -euo pipefail
+# NOTE: No set -euo pipefail here — this is a sourced library.
+# Shell options are set by the calling script (autoenum.sh) or disabled
+# in generated tmux window scripts.
 
 # === COLORS ===
 RED='\033[0;31m'
@@ -38,6 +40,7 @@ redis_enum() {
     }
 
     echo "msf> use auxiliary/scanner/redis/redis_server" >> "$loot/redis/manual_cmds"
+    rm -f "$loot/raw/redis_found"
     echo -e "${GREEN}[+] Redis enum complete!${NO_COLOR}"
 }
 
@@ -700,6 +703,7 @@ http_enum() {
         process_port "${ports[0]}"
     fi
 
+    rm -f "$loot/raw/http_found"
     echo -e "${GREEN}[+] HTTP enumeration complete!${NO_COLOR}"
 }
 
