@@ -618,6 +618,7 @@ http_enum() {
             --timeout 8s \
             --delay 200ms \
             --status-codes 200,204,301,302,307,401,403,500 \
+            --status-codes-blacklist "" \
             --no-error \
             --quiet
 
@@ -678,7 +679,7 @@ http_enum() {
             echo "sslscan --show-certificate $IP:$port"
             echo "curl -sSiLk $scheme://$IP:$port/{index.html,robots.txt}"
             echo "whatweb -a3 $scheme://$IP:$port"
-            echo "gobuster dir -u $scheme://$IP:$port -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -o $port_dir/dirs_found -k --timeout 8s --delay 200ms --status-codes 200,204,301,302,307,401,403,500"
+            echo "gobuster dir -u $scheme://$IP:$port -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -o $port_dir/dirs_found -k --timeout 8s --delay 200ms --status-codes 200,204,301,302,307,401,403,500 --status-codes-blacklist ''"
         } >> "$port_dir/cmds_run"
     }
 
