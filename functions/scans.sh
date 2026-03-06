@@ -202,8 +202,12 @@ enum_goto() {
         done
 
         echo -e "${GREEN}  [$(date '+%H:%M:%S')] ▶ Launching ${func} (${file})${NO_COLOR}"
-        ( timeout "$timeout" bash -c "$(declare -f "$func"); IP='$IP' loot='$loot' $func" \
-            || echo -e "${RED}  [-] ${func} timed out or failed${NO_COLOR}" ) &
+        ( timeout "$timeout" bash -c "
+            RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m'
+            BLUE='\033[0;34m' CYAN='\033[0;36m' BOLD='\033[1m' NO_COLOR='\033[0m'
+            $(declare -f "$func")
+            IP='$IP' loot='$loot' $func
+        " || echo -e "${RED}  [-] ${func} timed out or failed${NO_COLOR}" ) &
         (( running++ ))
         launched+=("$func")
     done
@@ -216,8 +220,12 @@ enum_goto() {
         local file="${found_os_services[$i]}"
         local func="${found_os_funcs[$i]}"
         echo -e "${YELLOW}  [$(date '+%H:%M:%S')] ▶ Launching ${func} (OS: ${file})${NO_COLOR}"
-        timeout "$timeout" bash -c "$(declare -f "$func"); IP='$IP' loot='$loot' $func" \
-            || echo -e "${RED}  [-] ${func} failed${NO_COLOR}"
+        timeout "$timeout" bash -c "
+            RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m'
+            BLUE='\033[0;34m' CYAN='\033[0;36m' BOLD='\033[1m' NO_COLOR='\033[0m'
+            $(declare -f "$func")
+            IP='$IP' loot='$loot' $func
+        " || echo -e "${RED}  [-] ${func} failed${NO_COLOR}"
         launched+=("$func")
     done
 
@@ -306,7 +314,8 @@ reg() {
         # Service-specific files
         local services=("http" "smb" "snmp" "ftp" "ldap" "smtp" "imap" "pop3" "oracle" "redis" "rpc" "dns")
         for service in "${services[@]}"; do
-            grep "$service" "$scan_dir/ports_and_services/services_running" | sort -u > "$loot/raw/${service}_found"
+            { grep "$service" "$scan_dir/ports_and_services/services_running" || true; } \
+                | sort -u > "$loot/raw/${service}_found"
         done
 
         # Clean HTTP ports extraction
@@ -316,7 +325,7 @@ reg() {
         _tag_os_from_scan "$scan_dir/ports_and_services/services_running" "$scan_dir/ports_and_services/OS_detection"
     }
 
-    process_scans
+    process_scans || true
     _print_port_summary "$scan_dir/raw/full_scan"
 
     enum_goto
@@ -412,7 +421,8 @@ aggr() {
 
         services=("smb" "snmp" "ftp" "ldap" "smtp" "imap" "pop3" "oracle" "redis" "rpc" "dns")
         for service in "${services[@]}"; do
-            grep "$service" "$IP/autoenum/aggr_scan/ports_and_services/services_running" | sort -u > "$loot/raw/${service}_found"
+            { grep "$service" "$IP/autoenum/aggr_scan/ports_and_services/services_running" || true; } \
+                | sort -u > "$loot/raw/${service}_found"
         done
     ) &
     local _extract2_pid=$!
@@ -479,7 +489,8 @@ top_1k() {
 
     services=("smb" "snmp" "ftp" "ldap" "smtp" "imap" "pop3" "oracle" "redis" "rpc" "dns")
     for service in "${services[@]}"; do
-        grep "$service" "$t1k/ports_and_services/services" | sort -u > "$loot/raw/${service}_found"
+        { grep "$service" "$t1k/ports_and_services/services" || true; } \
+            | sort -u > "$loot/raw/${service}_found"
     done
 
     # Tag Windows OS from port-based detection
@@ -537,7 +548,7 @@ top_10k() {
         fi
 
         # Extract open ports
-        grep 'open' "$scan_dir/raw/services" > "$scan_dir/ports_and_services/services"
+        { grep 'open' "$scan_dir/raw/services" || true; } > "$scan_dir/ports_and_services/services"
 
         # Service-specific files
         local services=(
@@ -564,7 +575,7 @@ top_10k() {
         echo -e "${GREEN}[+] Scan results processed and saved${NO_COLOR}"
     }
 
-    process_results
+    process_results || true
 
     enum_goto
 }
@@ -591,7 +602,7 @@ udp() {
         -oX "$udp_dir/raw/xml_out" > /dev/null 2>&1
 
     # Extract open ports
-    grep "open/udp" "$udp_dir/scan" | awk '{print $1}' | cut -d'/' -f1 > "$udp_dir/ports_and_services/open_ports"
+    { grep "open/udp" "$udp_dir/scan" || true; } | awk '{print $1}' | cut -d'/' -f1 > "$udp_dir/ports_and_services/open_ports"
 
     # Service-specific processing
     if [[ -s "$udp_dir/ports_and_services/open_ports" ]]; then
@@ -601,7 +612,7 @@ udp() {
         # Common UDP services check
         services=("snmp" "ntp" "dns" "dhcp" "tftp")
         for service in "${services[@]}"; do
-            grep -i "$service" "$udp_dir/scan" | sort -u > "$loot/raw/udp_${service}_found"
+            { grep -i "$service" "$udp_dir/scan" || true; } | sort -u > "$loot/raw/udp_${service}_found"
         done
 
         # Special checks for SNMP
